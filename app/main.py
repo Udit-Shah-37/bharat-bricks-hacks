@@ -165,8 +165,25 @@ def _format_citations(chunks_df) -> str:
     return "\n".join(lines) if lines else "(no metadata)"
 
 
-def _rag_answer_english(query_en: str) -> tuple[str, str, str, int]:
+def _extract_english_from_reply(reply_md: str) -> str:
+    """Extract the English portion from a bilingual reply markdown."""
+    # For bilingual responses, English is between "**English:**" and the "---" separator
+    if "**English:**" in reply_md:
+        parts = reply_md.split("**English:**", 1)
+        if len(parts) > 1:
+            en_part = parts[1].split("\n---\n", 1)[0].strip()
+            return en_part[:1500]  # cap to keep context manageable
+    # Monolingual English — strip sources/disclaimer
+    main = reply_md.split("\n---\n", 1)[0].strip()
+    return main[:1500]
+
+
+def _rag_answer_english(query_en: str, chat_history_en: list[dict] | None = None) -> tuple[str, str, str, int]:
     """Triage-enriched LLM answer in English + citations block.
+
+    Args:
+        query_en: Current query in English.
+        chat_history_en: Previous turns as [{"role": "user"|"assistant", "content": ...}, ...]
 
     Returns: (assistant_en, cites, domain_str, elapsed_ms)
     """
@@ -190,10 +207,16 @@ def _rag_answer_english(query_en: str) -> tuple[str, str, str, int]:
     # Build triage-enriched context (domain classification + action plan)
     domains, action_plan, enriched_user_msg = build_triage_context(q, chunks_df)
 
-    messages = [
-        {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "user", "content": enriched_user_msg},
-    ]
+    # Build messages with conversation history for follow-up context
+    messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+
+    # Include last 2 turns of history for follow-up context (keep token budget manageable)
+    if chat_history_en:
+        for turn in chat_history_en[-4:]:  # last 2 exchanges = 4 messages
+            messages.append(turn)
+
+    messages.append({"role": "user", "content": enriched_user_msg})
+
     raw = chat_completions(messages, max_tokens=3072, temperature=0.2)
     assistant_en = extract_assistant_text(raw)
 
@@ -368,7 +391,16 @@ def run_turn(
     history = [list(pair) for pair in history] if history else []
     try:
         user_show, q_en = resolve_user_message(message, audio, lang)
-        assistant_en, cites, domain_str, elapsed_ms = _rag_answer_english(q_en)
+
+        # Build conversation history for the LLM (English-only summaries of past turns)
+        chat_history_en: list[dict] = []
+        for pair in history[-2:]:  # last 2 turns
+            if len(pair) >= 2 and pair[0] and pair[1]:
+                chat_history_en.append({"role": "user", "content": str(pair[0])[:500]})
+                en_reply = _extract_english_from_reply(str(pair[1]))
+                chat_history_en.append({"role": "assistant", "content": en_reply})
+
+        assistant_en, cites, domain_str, elapsed_ms = _rag_answer_english(q_en, chat_history_en or None)
         reply_md = build_reply_markdown(assistant_en, cites, lang)
         history.append([user_show, reply_md])
         audio_out = maybe_tts(reply_md, lang, tts_on)
