@@ -537,16 +537,23 @@ def _is_streamlit_runtime() -> bool:
 
 
 def _bootstrap_streamlit() -> None:
-    from streamlit.web import bootstrap
-
     script_path = str(Path(__file__).resolve())
     port = os.environ.get("DATABRICKS_APP_PORT") or os.environ.get("PORT") or "8000"
-    flag_options = {
-        "server.port": int(port),
-        "server.address": "0.0.0.0",
-        "browser.gatherUsageStats": False,
-    }
-    bootstrap.run(script_path, False, [], flag_options)
+    cmd = [
+        "streamlit",
+        "run",
+        script_path,
+        "--server.port",
+        str(port),
+        "--server.address",
+        "0.0.0.0",
+        "--server.headless",
+        "true",
+        "--browser.gatherUsageStats",
+        "false",
+    ]
+    logger.info("Starting Streamlit via CLI on port %s", port)
+    os.execvp(cmd[0], cmd)
 
 
 def main() -> None:
