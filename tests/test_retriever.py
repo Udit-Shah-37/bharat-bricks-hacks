@@ -6,7 +6,7 @@ from unittest.mock import MagicMock
 import pandas as pd
 import pytest
 
-from nyaya_dhwani.retriever import FallbackRetriever
+from nyaya_dhwani.retrievers import FallbackRetriever
 
 
 class TestFallbackRetriever:

@@ -7,7 +7,7 @@ import pytest
 pytest.importorskip("faiss")
 
 from nyaya_dhwani.index_builder import save_rag_artifacts
-from nyaya_dhwani.retrieval import CorpusIndex
+from nyaya_dhwani.retrievers.faiss_index import CorpusIndex
 
 
 def test_save_and_load_roundtrip(tmp_path):

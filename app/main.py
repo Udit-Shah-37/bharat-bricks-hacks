@@ -43,17 +43,10 @@ _gc_utils._json_schema_to_python_type = _safe_inner
 _gc_utils.get_type = _safe_get_type
 # ---------- End monkey-patch ------------------------------------------------
 
-from nyaya_dhwani.llm_client import chat_completions, extract_assistant_text
-from nyaya_dhwani.retriever import Retriever, get_retriever
 from nyaya_dhwani.triage_engine import (
     TRIAGE_SYSTEM_PROMPT,
-    build_triage_context,
-    format_triage_citations,
-    post_process_response,
-    detect_clarifying_needed,
-    format_clarifying_response,
 )
-from nyaya_dhwani.domain_classifier import classify_domain
+from nyaya_dhwani.triage_service import TriageService
 from nyaya_dhwani.query_logger import log_query
 from nyaya_dhwani.sarvam_client import (
     is_configured as sarvam_configured,
@@ -113,8 +106,7 @@ UI_TO_BCP47: dict[str, str] = {
 }
 
 DISCLAIMER_EN = (
-    "This information is for general awareness only and does not constitute legal advice. "
-    "Consult a qualified lawyer for your specific situation."
+    "This is general legal information, not a substitute for advice from a qualified lawyer."
 )
 
 SYSTEM_PROMPT = TRIAGE_SYSTEM_PROMPT
@@ -124,88 +116,7 @@ def bcp47_target(lang: str) -> str:
     return UI_TO_BCP47.get(lang, "en-IN")
 
 
-class RAGRuntime:
-    """Lazy-load retriever (FAISS, Vector Search, or fallback combo)."""
-
-    def __init__(self) -> None:
-        self._retriever: Retriever | None = None
-
-    def load(self) -> None:
-        if self._retriever is not None:
-            return
-        self._retriever = get_retriever()
-        logger.info("Retriever loaded: %s", type(self._retriever).__name__)
-
-    @property
-    def retriever(self) -> Retriever:
-        if self._retriever is None:
-            raise RuntimeError("RAGRuntime not loaded")
-        return self._retriever
-
-
-_runtime: RAGRuntime | None = None
-
-
-def get_runtime() -> RAGRuntime:
-    global _runtime
-    if _runtime is None:
-        _runtime = RAGRuntime()
-    return _runtime
-
-
-def _format_citations(chunks_df) -> str:
-    lines: list[str] = []
-    for _, row in chunks_df.iterrows():
-        title = row.get("title") or ""
-        source = row.get("source") or ""
-        doc_type = row.get("doc_type") or ""
-        bits = [str(x).strip() for x in (title, source, doc_type) if x and str(x).strip()]
-        if bits:
-            lines.append("- " + " · ".join(bits[:3]))
-    return "\n".join(lines) if lines else "(no metadata)"
-
-
-def _rag_answer_english(query_en: str) -> tuple[str, str, str, int]:
-    """Triage-enriched LLM answer in English + citations block.
-
-    Returns: (assistant_en, cites, domain_str, elapsed_ms)
-    """
-    import time as _time
-    t0 = _time.perf_counter()
-
-    # Phase 3: Check if query needs clarification before full triage
-    domains_quick = classify_domain(query_en)
-    clarify_qs = detect_clarifying_needed(query_en, domains_quick)
-    if clarify_qs:
-        clarify_response = format_clarifying_response(clarify_qs, query_en)
-        domain_str = domains_quick[0].domain if domains_quick else "unknown"
-        elapsed_ms = int((_time.perf_counter() - t0) * 1000)
-        return clarify_response, "(clarifying question — no retrieval yet)", domain_str, elapsed_ms
-
-    rt = get_runtime()
-    rt.load()
-    q = query_en.strip()
-    chunks_df = rt.retriever.search(q, k=12)
-
-    # Build triage-enriched context (domain classification + action plan)
-    domains, action_plan, enriched_user_msg = build_triage_context(q, chunks_df)
-
-    messages = [
-        {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "user", "content": enriched_user_msg},
-    ]
-    raw = chat_completions(messages, max_tokens=3072, temperature=0.2)
-    assistant_en = extract_assistant_text(raw)
-
-    # Post-process: ensure helplines/fees from action plan appear in response
-    assistant_en = post_process_response(assistant_en, action_plan)
-
-    cites = format_triage_citations(chunks_df, domains)
-
-    domain_str = domains[0].domain if domains else "unknown"
-    elapsed_ms = int((_time.perf_counter() - t0) * 1000)
-
-    return assistant_en, cites, domain_str, elapsed_ms
+_triage_service = TriageService(system_prompt=SYSTEM_PROMPT, top_k=12)
 
 
 _TRANSLATE_CHUNK_LIMIT = 500  # Sarvam Mayura works best with shorter text
@@ -311,7 +222,7 @@ def resolve_user_message(
 
 def build_reply_markdown(assistant_en: str, cites: str, lang: str) -> str:
     """Build response with both English and translated text side by side."""
-    sources_block = f"**Sources (retrieval)**\n{cites}"
+    sources_block = f"**References used**\n{cites}"
 
     if lang == "en" or not sarvam_configured():
         return (
@@ -368,7 +279,7 @@ def run_turn(
     history = [list(pair) for pair in history] if history else []
     try:
         user_show, q_en = resolve_user_message(message, audio, lang)
-        assistant_en, cites, domain_str, elapsed_ms = _rag_answer_english(q_en)
+        assistant_en, cites, domain_str, elapsed_ms = _triage_service.answer(q_en, history)
         reply_md = build_reply_markdown(assistant_en, cites, lang)
         history.append([user_show, reply_md])
         audio_out = maybe_tts(reply_md, lang, tts_on)

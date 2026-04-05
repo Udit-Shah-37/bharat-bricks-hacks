@@ -24,7 +24,7 @@ class CorpusIndex:
         self.chunks = chunks
 
     @classmethod
-    def load(cls, index_dir: str | Path) -> CorpusIndex:
+    def load(cls, index_dir: str | Path) -> "CorpusIndex":
         faiss = get_faiss()
         index_dir = Path(index_dir)
         manifest = RAGManifest.load(index_dir / "manifest.json")

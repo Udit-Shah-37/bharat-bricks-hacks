@@ -1,12 +1,4 @@
-"""Unified retriever interface with FAISS and Vector Search backends.
-
-Usage::
-
-    from nyaya_dhwani.retriever import get_retriever
-
-    retriever = get_retriever()           # reads NYAYA_RETRIEVAL_BACKEND env var
-    results_df = retriever.search("What is theft under BNS?", k=7)
-"""
+"""Unified retriever interface and backend factory."""
 
 from __future__ import annotations
 
@@ -17,41 +9,30 @@ from typing import Protocol, runtime_checkable
 
 import pandas as pd
 
+from nyaya_dhwani.retrievers.faiss_index import CorpusIndex
+
 logger = logging.getLogger(__name__)
 
 
-# ---------------------------------------------------------------------------
-# Protocol
-# ---------------------------------------------------------------------------
-
 @runtime_checkable
 class Retriever(Protocol):
-    """Uniform search interface for RAG retrieval backends."""
+    """Uniform search interface for retrieval backends."""
 
     def search(self, query: str, k: int = 7) -> pd.DataFrame:
-        """Return top-k chunks as a DataFrame.
-
-        Expected columns: text, title, source, doc_type, score, rank.
-        """
         ...
 
 
-# ---------------------------------------------------------------------------
-# FAISS backend
-# ---------------------------------------------------------------------------
-
 class FaissRetriever:
-    """Wraps ``CorpusIndex`` + ``SentenceEmbedder`` behind the ``Retriever`` interface."""
+    """Wraps CorpusIndex + SentenceEmbedder behind the Retriever interface."""
 
     def __init__(self, index_dir: str | Path) -> None:
         self._index_dir = str(index_dir)
-        self._ci = None
+        self._ci: CorpusIndex | None = None
         self._embedder = None
 
     def _load(self) -> None:
         if self._ci is not None:
             return
-        from nyaya_dhwani.retrieval import CorpusIndex
         from nyaya_dhwani.embedder import SentenceEmbedder
 
         logger.info("FaissRetriever: loading index from %s", self._index_dir)
@@ -69,17 +50,12 @@ class FaissRetriever:
         emb = self._embedder.encode([query.strip()])
         semantic_df = self._ci.search(emb, k=k)
 
-        # Apply keyword boosting for IPC/BNS section references.
         from nyaya_dhwani.keyword_boost import boost_with_keywords
         return boost_with_keywords(query, semantic_df, self._ci.chunks, k=k)
 
 
-# ---------------------------------------------------------------------------
-# Fallback wrapper
-# ---------------------------------------------------------------------------
-
 class FallbackRetriever:
-    """Tries *primary*, falls back to *fallback* on failure or empty result."""
+    """Tries primary retriever, falls back on failure or empty result."""
 
     def __init__(self, primary: Retriever, fallback: Retriever) -> None:
         self._primary = primary
@@ -96,10 +72,6 @@ class FallbackRetriever:
         return self._fallback.search(query, k)
 
 
-# ---------------------------------------------------------------------------
-# Factory
-# ---------------------------------------------------------------------------
-
 _LOCAL_INDEX_CACHE = "/tmp/nyaya_index"
 
 
@@ -109,8 +81,9 @@ def _download_from_volume(volume_path: str, local_dir: str) -> str:
     if (local / "manifest.json").exists():
         logger.info("Index already cached at %s", local)
         return str(local)
-    logger.info("Downloading index from Volume %s → %s", volume_path, local)
-    from databricks.sdk import WorkspaceClient
+    logger.info("Downloading index from Volume %s -> %s", volume_path, local)
+    from databricks.sdk import WorkspaceClient  # type: ignore[import-not-found]
+
     w = WorkspaceClient()
     local.mkdir(parents=True, exist_ok=True)
     for item in w.files.list_directory_contents(volume_path):
@@ -124,7 +97,7 @@ def _download_from_volume(volume_path: str, local_dir: str) -> str:
                 if not chunk:
                     break
                 dst.write(chunk)
-    logger.info("Index download complete → %s", local)
+    logger.info("Index download complete -> %s", local)
     return str(local)
 
 
@@ -141,13 +114,7 @@ def _resolve_index_dir() -> str:
 
 
 def get_retriever() -> Retriever:
-    """Instantiate the configured retriever backend.
-
-    Reads ``NYAYA_RETRIEVAL_BACKEND`` env var:
-
-    - ``"vector_search"`` → ``VectorSearchRetriever`` with FAISS fallback
-    - ``"faiss"`` (default) → ``FaissRetriever``
-    """
+    """Instantiate the configured retriever backend."""
     backend = os.environ.get("NYAYA_RETRIEVAL_BACKEND", "faiss").strip().lower()
     use_hybrid = os.environ.get("NYAYA_USE_HYBRID", "true").strip().lower() in ("1", "true", "yes")
 
@@ -159,7 +126,8 @@ def get_retriever() -> Retriever:
         index_name = os.environ.get("NYAYA_VS_INDEX_NAME", "").strip()
         if endpoint and index_name:
             try:
-                from nyaya_dhwani.vs_retriever import VectorSearchRetriever
+                from nyaya_dhwani.retrievers.vector_search import VectorSearchRetriever
+
                 vs_ret = VectorSearchRetriever(endpoint, index_name)
                 logger.info("Using VectorSearchRetriever (endpoint=%s) with FAISS fallback", endpoint)
                 return FallbackRetriever(primary=vs_ret, fallback=faiss_ret)
@@ -168,13 +136,13 @@ def get_retriever() -> Retriever:
         else:
             logger.warning(
                 "NYAYA_RETRIEVAL_BACKEND=vector_search but NYAYA_VS_ENDPOINT_NAME / "
-                "NYAYA_VS_INDEX_NAME not set — falling back to FAISS"
+                "NYAYA_VS_INDEX_NAME not set - falling back to FAISS"
             )
 
-    # Wrap FAISS in HybridRetriever (BM25 + RRF + cross-ref expansion)
     if use_hybrid:
         try:
-            from nyaya_dhwani.hybrid_retriever import HybridRetriever
+            from nyaya_dhwani.retrievers.hybrid import HybridRetriever
+
             hybrid = HybridRetriever(faiss_ret)
             logger.info("Using HybridRetriever (FAISS + BM25 + RRF, index_dir=%s)", faiss_dir)
             return hybrid

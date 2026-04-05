@@ -11,7 +11,6 @@ import os
 sys.path.insert(0, '/Workspace/Users/saisandeshk@iisc.ac.in/bharat-bricks-hacks/src')
 
 import logging
-from dataclasses import dataclass, field
 
 import pandas as pd
 
@@ -24,9 +23,6 @@ from nyaya_dhwani.case_knowledge import (
     format_case_references,
     get_government_schemes,
     format_scheme_context,
-    StrengthAssessment,
-    CaseReference,
-    GovernmentScheme,
 )
 
 logger = logging.getLogger(__name__)
@@ -58,63 +54,47 @@ Explain in 2-3 sentences WHY these domains apply to the user's facts.
 
 ## 2. Applicable Laws
 ### Statutory Provisions (BNS / Acts)
-- Cite EXACT section numbers from the STATUTES context. Format: **BNS Section XX** or **[Act Name] Section XX**.
+- Cite EXACT section numbers from the === STATUTES === block. Format: **BNS Section XX** or **[Act Name] Section XX**.
 - For each section, explain in one line how it applies to the user's situation.
 
 ### Constitutional Rights
-- Cite EXACT Article numbers from the CONSTITUTIONAL PROVISIONS context. Format: **Article XX**.
+- Cite EXACT Article numbers from the === CONSTITUTIONAL PROVISIONS === block. Format: **Article XX**.
 - Explain how each constitutional right protects the user in this situation.
-- If no constitutional provisions are in the context, skip this sub-section.
+- **If the === CONSTITUTIONAL PROVISIONS === block is absent or empty, write: "No constitutional provisions were retrieved for this query. Consult a lawyer for constitutional remedies." Do NOT invent articles.**
 
 ## 3. Supreme Court Precedents
-- For EACH relevant SC judgment in the context, write: **"In *[Case Name]* ([Year]), the Supreme Court held that [key holding]."**
-- Then explain in one line how it strengthens the user's position.
-- Cite at least 2 SC judgments if available. If none in context, skip this section.
+- ONLY cite SC judgments that appear VERBATIM in the === SUPREME COURT JUDGMENTS === block.
+- For each: **"In *[Case Name]* ([Year]), the Supreme Court held that [key holding]."**
+- **If the === SUPREME COURT JUDGMENTS === block is absent or empty, write: "No SC precedents were retrieved for this query." Do NOT invent or guess case names. NEVER fabricate a citation.**
 
 ## 4. Case Strength & Evidence
 - State the assessment: 🟢 Strong / 🟡 Moderate / 🔴 Needs More Evidence.
 - List what evidence the user should gather to strengthen their case.
 
 ## 5. Step-by-Step Action Plan
-Use EXACTLY the helplines, fees, deadlines, and portals from the ACTION PLAN context.
+Use EXACTLY the helplines, fees, deadlines, and portals from the === ACTION PLAN === block.
 - Where to go first (police station / court / forum / authority)
 - What documents to carry
 - Filing fees and time limits
 - What to expect (process timeline)
 
 ## 6. Emergency Contacts & Resources
-- Helpline numbers (from ACTION PLAN context — use numbers EXACTLY as given)
+- Helpline numbers (from ACTION PLAN — use numbers EXACTLY as given)
 - Online portals
-- Government schemes the user is eligible for (from GOVERNMENT SCHEMES context)
+- Government schemes the user is eligible for (from GOVERNMENT SCHEMES block)
 
 End with: **⚖️ This is informational guidance only. Please consult a qualified lawyer for your specific situation.**
 
-━━━ CRITICAL RULES ━━━
-- ONLY cite sections, articles, and case names that appear in the provided context — NEVER invent them.
-- Use helpline numbers, fees, and deadlines EXACTLY as given — do NOT change them.
-- If the context is insufficient, say so clearly — do NOT make up legal information.
-- Keep the tone empathetic but professional — the user may be in distress.
-- Use markdown headers (##, ###) and bullet points for readability.
-- When multiple legal domains apply (e.g., unlawful arrest = criminal + constitutional), address ALL.
+━━━ ABSOLUTE RULES (VIOLATION = FAILURE) ━━━
+1. **ZERO HALLUCINATION**: You may ONLY cite section numbers, article numbers, case names, helpline numbers, \
+fees, and deadlines that appear VERBATIM in the provided context blocks. If a context block is missing or \
+empty, state that clearly and move on. NEVER invent a legal citation.
+2. If a user asks a follow-up question about something from a previous answer, use the conversation \
+history to provide context. If the previous answer cited something incorrectly, acknowledge and correct it.
+3. Keep the tone empathetic but professional — the user may be in distress.
+4. Use markdown headers (##, ###) and bullet points for readability.
+5. When multiple legal domains apply (e.g., unlawful arrest = criminal + constitutional), address ALL.
 """
-
-
-# ---------------------------------------------------------------------------
-# Data classes
-# ---------------------------------------------------------------------------
-
-@dataclass
-class TriageResult:
-    """Complete triage output for a user query."""
-    query_en: str
-    domains: list[DomainMatch]
-    action_plan: ActionPlan | None
-    retrieved_chunks: pd.DataFrame
-    llm_response: str
-    citations: str
-    strength: StrengthAssessment | None = None
-    similar_cases: list[CaseReference] = field(default_factory=list)
-    schemes: list[GovernmentScheme] = field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------
@@ -198,7 +178,7 @@ def detect_clarifying_needed(query_en: str, domains: list[DomainMatch]) -> list[
     return None
 
 
-def format_clarifying_response(questions: list[str], query_en: str) -> str:
+def format_clarifying_response(questions: list[str]) -> str:
     """Format clarifying questions as a friendly markdown response."""
     lines = [
         "I want to help you with the best possible guidance. To do that, could you provide a bit more detail?\n",
@@ -215,7 +195,11 @@ def format_clarifying_response(questions: list[str], query_en: str) -> str:
 # Core triage functions
 # ---------------------------------------------------------------------------
 
-def build_triage_context(query_en: str, chunks_df: pd.DataFrame) -> tuple[list[DomainMatch], ActionPlan | None, str]:
+def build_triage_context(
+    query_en: str,
+    chunks_df: pd.DataFrame,
+    history_context: str = "",
+) -> tuple[list[DomainMatch], ActionPlan | None, str]:
     """Classify domain, look up action plan, and build enriched context for LLM.
 
     Returns: (domains, action_plan, enriched_user_message)
@@ -291,7 +275,11 @@ def build_triage_context(query_en: str, chunks_df: pd.DataFrame) -> tuple[list[D
 
     combined_context = "\n\n".join(parts) if parts else "(No relevant context found)"
 
-    user_message = f"Context:\n{combined_context}\n\nUser's situation: {query_en}"
+    conversation_block = ""
+    if history_context.strip():
+        conversation_block = f"\n\nConversation history:\n{history_context.strip()}"
+
+    user_message = f"Context:\n{combined_context}{conversation_block}\n\nUser's situation: {query_en}"
 
     return domains, action_plan, user_message
 
