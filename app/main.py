@@ -90,6 +90,36 @@ def bcp47_target(lang: str) -> str:
     return UI_TO_BCP47.get(lang, "en-IN")
 
 
+def _normalize_lang_code(code: str) -> str:
+    return (code or "").strip()
+
+
+def _translation_looks_unchanged(src: str, out: str) -> bool:
+    return src.strip() == out.strip()
+
+
+def _translate_with_fallback(text: str, *, source: str, target: str) -> str:
+    """Translate once, then retry with base language codes if output is unchanged."""
+    src = _normalize_lang_code(source)
+    tgt = _normalize_lang_code(target)
+
+    result = translate_text(text, source_language_code=src, target_language_code=tgt)
+    if not _translation_looks_unchanged(text, result):
+        return result
+
+    src_base = src.split("-", 1)[0] if "-" in src else src
+    tgt_base = tgt.split("-", 1)[0] if "-" in tgt else tgt
+
+    # Retry only if the normalized call would actually differ.
+    if src_base != src or tgt_base != tgt:
+        retry = translate_text(text, source_language_code=src_base, target_language_code=tgt_base)
+        if not _translation_looks_unchanged(text, retry):
+            logger.info("Translate fallback succeeded with %s -> %s", src_base, tgt_base)
+            return retry
+
+    return result
+
+
 def _chunked_translate(text: str, *, source: str, target: str) -> str:
     """Translate long text by splitting into paragraph-sized chunks."""
     paragraphs = text.split("\n")
@@ -110,7 +140,7 @@ def _chunked_translate(text: str, *, source: str, target: str) -> str:
             translated_parts.append(chunk)
             continue
         try:
-            result = translate_text(chunk, source_language_code=source, target_language_code=target)
+            result = _translate_with_fallback(chunk, source=source, target=target)
             translated_parts.append(result)
         except Exception as exc:
             logger.warning("Mayura chunk translate failed, keeping original: %s", exc)
@@ -126,7 +156,7 @@ def _maybe_translate(text: str, *, source: str, target: str) -> str:
     if len(text) > _TRANSLATE_CHUNK_LIMIT:
         return _chunked_translate(text, source=source, target=target)
     try:
-        return translate_text(text, source_language_code=source, target_language_code=target)
+        return _translate_with_fallback(text, source=source, target=target)
     except Exception as exc:
         logger.warning("Mayura translate failed, using original: %s", exc)
         return text
@@ -563,6 +593,9 @@ def render_app() -> None:
             help="Questions are retrieved in English and answers are returned in your selected language.",
         )
         st.session_state.lang = lang_map[selected_label]
+
+        if st.session_state.lang != "en" and not sarvam_configured():
+            st.warning("Translation is unavailable: SARVAM_API_KEY is missing in app runtime.")
 
         st.session_state.tts_on = st.toggle("Read answer aloud", value=st.session_state.tts_on)
 
