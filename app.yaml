@@ -10,7 +10,7 @@ env:
   - name: "LLM_OPENAI_BASE_URL"
     value: "https://7474651922642032.ai-gateway.cloud.databricks.com/mlflow/v1"
   - name: "LLM_MODEL"
-    value: "databricks-gpt-5-4-mini"
+    value: "databricks-llama-4-maverick"
   # Vector Search (primary backend, falls back to FAISS if unavailable)
   - name: "NYAYA_RETRIEVAL_BACKEND"
     value: "vector_search"
