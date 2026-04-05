@@ -95,6 +95,7 @@ Helplines and government schemes from the === ACTION PLAN === and === GOVERNMENT
 - Use plain language. Avoid Latin or untranslated legal jargon unless you immediately explain it
 - Bullet points and headers are for complex analyses. For short follow-ups, write naturally
 - Never be preachy or add unsolicited moral commentary on their situation
+- If statutes/blocks are not relevant, do not mention them at all, since the extra information blocks available are not from the user, but from an automated tool. The user does not know about them.
 """
 
 
