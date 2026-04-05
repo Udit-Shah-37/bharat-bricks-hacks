@@ -474,28 +474,54 @@ def _apply_styles() -> None:
     )
 
 
-def _run_turn(*, text: str, audio_bytes: bytes | None) -> None:
-    user_show, reply_md, assistant_en, domain_str, elapsed_ms, q_en = _generate_reply(
-        text=text,
-        audio_bytes=audio_bytes,
-    )
+def _submit_turn_with_feedback(
+    *,
+    text: str,
+    audio_bytes: bytes | None,
+    user_preview: str | None = None,
+    query_text_for_log: str | None = None,
+) -> None:
+    preview = user_preview if user_preview is not None else (text.strip() if text.strip() else "🎤 Processing voice input...")
+    st.session_state.messages.append({"role": "user", "content": preview})
 
-    st.session_state.history_pairs.append([user_show, reply_md])
-    st.session_state.messages.append({"role": "user", "content": user_show})
-    st.session_state.messages.append({"role": "assistant", "content": reply_md})
-    st.session_state.latest_tts = maybe_tts_bytes(reply_md, st.session_state.lang, st.session_state.tts_on)
+    with st.chat_message("user"):
+        st.markdown(preview)
 
-    try:
-        log_query(
-            user_lang=st.session_state.lang,
-            query_text=text or "(audio)",
-            query_en=q_en,
-            domain_detected=domain_str,
-            response_en=assistant_en,
-            response_time_ms=elapsed_ms,
-        )
-    except Exception:
-        logger.debug("Query logging failed (non-fatal)", exc_info=True)
+    with st.chat_message("assistant"):
+        response_placeholder = st.empty()
+        with st.spinner("Preparing legal guidance..."):
+            try:
+                user_show, reply_md, assistant_en, domain_str, elapsed_ms, q_en = _generate_reply(
+                    text=text,
+                    audio_bytes=audio_bytes,
+                )
+
+                st.session_state.messages[-1]["content"] = user_show
+                st.session_state.history_pairs.append([user_show, reply_md])
+                st.session_state.messages.append({"role": "assistant", "content": reply_md})
+                st.session_state.latest_tts = maybe_tts_bytes(
+                    reply_md,
+                    st.session_state.lang,
+                    st.session_state.tts_on,
+                )
+
+                try:
+                    log_query(
+                        user_lang=st.session_state.lang,
+                        query_text=query_text_for_log if query_text_for_log is not None else (text or "(audio)"),
+                        query_en=q_en,
+                        domain_detected=domain_str,
+                        response_en=assistant_en,
+                        response_time_ms=elapsed_ms,
+                    )
+                except Exception:
+                    logger.debug("Query logging failed (non-fatal)", exc_info=True)
+
+                response_placeholder.markdown(reply_md)
+            except Exception as exc:
+                err = f"**Error:** {exc}"
+                st.session_state.messages.append({"role": "assistant", "content": err})
+                response_placeholder.markdown(err)
 
 
 def _generate_reply(*, text: str, audio_bytes: bytes | None) -> tuple[str, str, str, str, int, str]:
@@ -521,6 +547,11 @@ def render_app() -> None:
     st.title("Nyaya-Sahayak · न्याय सहायक")
     st.caption("Your legal first-response assistant powered by Databricks and Sarvam AI.")
 
+    pending_text: str | None = None
+    pending_audio_bytes: bytes | None = None
+    pending_user_preview: str | None = None
+    pending_query_text_for_log: str | None = None
+
     with st.sidebar:
         st.subheader("Session")
         lang_map = {label: code for code, label in SARVAM_LANGUAGES}
@@ -538,11 +569,10 @@ def render_app() -> None:
 
         topic = st.selectbox("Quick start prompt", options=["Choose a topic..."] + list(TOPIC_SEEDS.keys()))
         if st.button("Ask quick prompt", use_container_width=True) and topic in TOPIC_SEEDS:
-            try:
-                _run_turn(text=TOPIC_SEEDS[topic], audio_bytes=None)
-                st.rerun()
-            except Exception as exc:
-                st.error(f"Error: {exc}")
+            pending_text = TOPIC_SEEDS[topic]
+            pending_audio_bytes = None
+            pending_user_preview = pending_text
+            pending_query_text_for_log = pending_text
 
         st.markdown("---")
         st.subheader("Voice")
@@ -556,11 +586,10 @@ def render_app() -> None:
             if audio_file is None:
                 st.warning("Record audio first.")
             else:
-                try:
-                    _run_turn(text="", audio_bytes=audio_file.getvalue())
-                    st.rerun()
-                except Exception as exc:
-                    st.error(f"Error: {exc}")
+                pending_text = ""
+                pending_audio_bytes = audio_file.getvalue()
+                pending_user_preview = "🎤 Processing voice input..."
+                pending_query_text_for_log = "(audio)"
 
         if st.button("Clear chat", use_container_width=True):
             st.session_state.messages = []
@@ -593,48 +622,22 @@ def render_app() -> None:
         with st.chat_message(msg["role"]):
             st.markdown(msg["content"])
 
+    if pending_text is not None or pending_audio_bytes is not None:
+        _submit_turn_with_feedback(
+            text=pending_text or "",
+            audio_bytes=pending_audio_bytes,
+            user_preview=pending_user_preview,
+            query_text_for_log=pending_query_text_for_log,
+        )
+
     user_text = st.chat_input("Ask your legal question in any supported language...")
     if user_text:
-        st.session_state.messages.append({"role": "user", "content": user_text})
-        with st.chat_message("user"):
-            st.markdown(user_text)
-
-        with st.chat_message("assistant"):
-            response_placeholder = st.empty()
-            with st.spinner("Preparing legal guidance..."):
-                try:
-                    user_show, reply_md, assistant_en, domain_str, elapsed_ms, q_en = _generate_reply(
-                        text=user_text,
-                        audio_bytes=None,
-                    )
-
-                    # Keep the displayed user bubble in sync with resolved text format.
-                    st.session_state.messages[-1]["content"] = user_show
-                    st.session_state.history_pairs.append([user_show, reply_md])
-                    st.session_state.messages.append({"role": "assistant", "content": reply_md})
-                    st.session_state.latest_tts = maybe_tts_bytes(
-                        reply_md,
-                        st.session_state.lang,
-                        st.session_state.tts_on,
-                    )
-
-                    try:
-                        log_query(
-                            user_lang=st.session_state.lang,
-                            query_text=user_text,
-                            query_en=q_en,
-                            domain_detected=domain_str,
-                            response_en=assistant_en,
-                            response_time_ms=elapsed_ms,
-                        )
-                    except Exception:
-                        logger.debug("Query logging failed (non-fatal)", exc_info=True)
-
-                    response_placeholder.markdown(reply_md)
-                except Exception as exc:
-                    err = f"**Error:** {exc}"
-                    st.session_state.messages.append({"role": "assistant", "content": err})
-                    response_placeholder.markdown(err)
+        _submit_turn_with_feedback(
+            text=user_text,
+            audio_bytes=None,
+            user_preview=user_text,
+            query_text_for_log=user_text,
+        )
 
     if st.session_state.latest_tts:
         st.audio(st.session_state.latest_tts, format="audio/wav")
