@@ -312,16 +312,16 @@ def _apply_styles() -> None:
         @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&family=Playfair+Display:wght@700&display=swap');
 
         :root {
-            --bg: #f6f2ea;
-            --paper: #fffdfa;
-            --ink: #1f2933;
-            --muted: #5a6572;
-            --brand: #8f4313;
-            --brand-strong: #6c2f09;
-            --border: #e8dece;
-            --chat-user: #fef6ea;
+            --bg: #f7f6f2;
+            --paper: #ffffff;
+            --ink: #24303a;
+            --muted: #60707d;
+            --brand: #2f6f7a;
+            --brand-strong: #245760;
+            --border: #dbe3ea;
+            --chat-user: #eef6f8;
             --chat-assistant: #ffffff;
-            --focus: #b65a1f;
+            --focus: #2f6f7a;
         }
 
         .stApp,
@@ -330,8 +330,8 @@ def _apply_styles() -> None:
             font-family: 'Manrope', 'Segoe UI', sans-serif;
             color: var(--ink);
             background:
-                radial-gradient(900px 450px at 8% -10%, #f7ddc0 0%, transparent 46%),
-                radial-gradient(760px 420px at 100% -5%, #ecdac8 0%, transparent 42%),
+                radial-gradient(920px 460px at 10% -10%, #e8f1f4 0%, transparent 44%),
+                radial-gradient(760px 420px at 100% -6%, #eef2f7 0%, transparent 40%),
                 var(--bg);
         }
 
@@ -340,7 +340,8 @@ def _apply_styles() -> None:
         .stApp span,
         .stApp label,
         .stApp li,
-        .stApp div {
+        .stMarkdown,
+        .stCaptionContainer {
             color: var(--ink);
         }
 
@@ -352,6 +353,10 @@ def _apply_styles() -> None:
         [data-testid="stSidebar"] {
             background: var(--paper);
             border-left: 1px solid var(--border);
+        }
+
+        [data-testid="stSidebarContent"] {
+            background: linear-gradient(180deg, #ffffff 0%, #f8fbfc 100%);
         }
 
         [data-testid="stSidebar"] * {
@@ -373,13 +378,35 @@ def _apply_styles() -> None:
             border-color: var(--border) !important;
         }
 
+        [data-baseweb="select"] > div,
+        [data-baseweb="input"] > div,
+        [data-baseweb="textarea"] > div {
+            box-shadow: none !important;
+        }
+
         [data-baseweb="select"] [role="option"],
         [data-baseweb="popover"] * {
             color: var(--ink) !important;
         }
 
+        [data-baseweb="popover"],
+        [data-baseweb="menu"],
+        [role="listbox"] {
+            background: #ffffff !important;
+            border: 1px solid var(--border) !important;
+        }
+
+        [role="option"] {
+            background: #ffffff !important;
+        }
+
+        [role="option"][aria-selected="true"],
+        [role="option"]:hover {
+            background: #eef6f8 !important;
+        }
+
         [data-testid="stChatInput"] {
-            background: #fffdf9;
+            background: #ffffff;
             border: 1px solid var(--border);
             border-radius: 12px;
             padding: 2px;
@@ -390,21 +417,32 @@ def _apply_styles() -> None:
             border-radius: 14px;
             background: var(--chat-assistant);
             padding: 0.3rem 0.7rem;
+            box-shadow: 0 4px 16px rgba(24, 43, 64, 0.04);
         }
 
         [data-testid="stChatMessage"]:has([data-testid="chatAvatarIcon-user"]) {
             background: var(--chat-user);
         }
 
-        .stButton > button, .stDownloadButton > button {
+        .stButton > button,
+        .stDownloadButton > button,
+        [data-testid="stBaseButton-primary"] {
             border: none;
-            color: white;
+            color: #ffffff !important;
             background: linear-gradient(135deg, var(--brand), var(--brand-strong));
-            box-shadow: 0 6px 18px rgba(124, 54, 8, 0.22);
+            box-shadow: 0 6px 16px rgba(36, 87, 96, 0.24);
         }
 
-        .stButton > button:hover, .stDownloadButton > button:hover {
-            filter: brightness(1.05);
+        .stButton > button *,
+        .stDownloadButton > button * {
+            color: #ffffff !important;
+        }
+
+        .stButton > button:hover,
+        .stDownloadButton > button:hover,
+        [data-testid="stBaseButton-primary"]:hover {
+            filter: brightness(1.03);
+            transform: translateY(-1px);
         }
 
         .stButton > button:focus, .stDownloadButton > button:focus,
@@ -416,9 +454,14 @@ def _apply_styles() -> None:
 
         [data-testid="stDataFrame"],
         [data-testid="stTable"] {
-            background: #fffdfa;
+            background: #ffffff;
             border: 1px solid var(--border);
             border-radius: 10px;
+        }
+
+        [data-testid="stToolbar"],
+        [data-testid="stDecoration"] {
+            background: transparent !important;
         }
 
         .subtle-note {
