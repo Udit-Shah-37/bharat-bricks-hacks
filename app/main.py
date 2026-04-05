@@ -691,8 +691,8 @@ def render_app() -> None:
 
     st.markdown(
         "<p class='subtle-note'>This is informational guidance only - not a substitute for legal counsel. "
-        "Consult a qualified lawyer for your specific situation."
-        " Powered by Databricks (GPT-OSS and Vector Search) and Sarvam AI "
+        "Consult a qualified lawyer for your specific situation.<br>"
+        "Powered by Databricks (GPT-OSS and Vector Search) and Sarvam AI "
         "(translation, speech-to-text, text-to-speech)</p>",
         unsafe_allow_html=True,
     )
