@@ -14,31 +14,59 @@ Nyaya-Saathi is a multilingual legal first-response assistant for Indian citizen
 
 ```mermaid
 flowchart LR
-    U[Citizen / User] -->|Text or Voice| A[Databricks App\nStreamlit UI\napp/main.py]
+    U(["👤 Citizen / User"])
 
-    A -->|If non-English: translate to English| S1[Sarvam Mayura\nTranslation API]
-    A -->|Voice input| S2[Sarvam Saaras\nSpeech-to-Text API]
+    subgraph input ["Input Processing"]
+        A["Streamlit UI\napp/main.py"]
+        S2["Saaras\nSpeech-to-Text"]
+        S1["Mayura\nTranslation"]
+    end
 
-    A --> T[TriageService\nFollow-up aware orchestration]
-    T --> D[Domain Classifier\ncriminal/consumer/family/labour/property/constitutional]
-    T --> C[Triage Engine\nAction plans + case strength + landmark cases + schemes]
+    subgraph triage ["Triage Layer"]
+        T["TriageService"]
+        D["Domain Classifier\ncriminal · consumer · family\nlabour · property · constitutional"]
+        C["Triage Engine\naction plans · case strength\nlandmark cases · schemes"]
+    end
 
-    T --> R{Retriever Factory}
-    R -->|Primary| VS[Databricks Vector Search\nEndpoint: nyaya_vs_endpoint\nIndex: workspace.default.legal_rag_corpus_index]
-    R -->|Fallback| F[FAISS Index + Hybrid BM25/RRF\nLoaded from UC Volume or local cache]
+    subgraph retrieval ["Retrieval"]
+        R["Retriever Factory"]
+        VS[("Vector Search\nnyaya_vs_endpoint")]
+        F[("FAISS Fallback\nBM25 / RRF")]
+    end
 
-    T --> L[LLM Client]
-    L --> G[Databricks AI Gateway\nOpenAI-compatible /mlflow/v1]
-    G --> M[Model\ndatabricks-gpt-oss-120b]
+    subgraph llm_layer ["LLM"]
+        L["LLM Client"]
+        G["AI Gateway\nOpenAI-compatible"]
+        M[["databricks-gpt-oss-120b"]]
+    end
 
-    A -->|Translate answer + TTS (optional)| S3[Sarvam Mayura + Bulbul\nTranslation + Text-to-Speech]
+    subgraph output ["Output & Logging"]
+        S3["Mayura + Bulbul\nTranslate + TTS"]
+        Q["Query Logger"]
+        DL[("Delta Table\nquery_logs")]
+        CSV["CSV fallback\n/tmp/nyaya_query_logs.csv"]
+        AN["Analytics Panel"]
+    end
 
-    A --> Q[Query Logger]
-    Q --> DL[Delta Table\nworkspace.default.query_logs]
-    Q --> CSV[/tmp/nyaya_query_logs.csv fallback]
+    U -->|"text / voice"| A
+    A -->|"voice"| S2
+    A -->|"non-English"| S1
+    S2 & S1 --> A
 
-    DL --> AN[Analytics panel in app sidebar]
-    CSV --> AN
+    A --> T
+    T --> D & C
+    T --> R
+    T --> L
+
+    R -->|"primary"| VS
+    R -->|"fallback"| F
+
+    L --> G --> M
+
+    A -->|"translate + speak"| S3
+    A --> Q
+    Q --> DL & CSV
+    DL & CSV --> AN
 ```
 
 ## Repo Structure
