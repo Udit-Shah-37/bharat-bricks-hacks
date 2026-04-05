@@ -1,9 +1,9 @@
 {
   "_meta": {
-    "description": "Benchmark questions for Nyaya Dhwani RAG evaluation",
-    "format": "Inspired by BhashaBench-Legal (bharatgenai/BhashaBench-Legal) MCQ format",
-    "categories": ["ipc_bns_mapping", "bns_knowledge", "ipc_knowledge", "cross_reference"],
-    "languages": ["en", "hi", "kn"]
+    "description": "Benchmark questions for Nyaya-Sahayak RAG + Triage evaluation",
+    "format": "Phase 1 MCQs + Phase 2 triage scenarios with expected domain, sections, action plan fields",
+    "categories": ["ipc_bns_mapping", "bns_knowledge", "ipc_knowledge", "cross_reference", "triage_criminal", "triage_consumer", "triage_constitutional", "triage_family", "triage_labour", "triage_cross_domain"],
+    "languages": ["en", "hi", "kn", "te"]
   },
   "questions": [
     {
@@ -282,5 +282,206 @@
       "expected_in_answer": ["theft", "punishment", "303"],
       "expected_chunks": ["BNS_S303", "MAP_BNS303"]
     }
+  ],
+  "triage_questions": [
+    {
+      "id": "TRI_CR_01",
+      "category": "triage_criminal",
+      "language": "en",
+      "question": "My neighbour broke into my house at night and stole my laptop and jewellery. What should I do?",
+      "expected_domain": "criminal",
+      "expected_situation_type": "theft",
+      "expected_sections": ["BNS Section 303", "BNS Section 305"],
+      "expected_action_steps": ["File an FIR", "112"],
+      "expected_helplines": ["112"]
+    },
+    {
+      "id": "TRI_CR_02",
+      "category": "triage_criminal",
+      "language": "en",
+      "question": "My husband beats me every day and threatens to throw me out of the house. He also demands more dowry from my parents.",
+      "expected_domain": "criminal",
+      "expected_situation_type": "domestic_violence",
+      "expected_sections": ["BNS Section 85", "BNS Section 86", "Protection of Women from Domestic Violence Act"],
+      "expected_action_steps": ["Call Women Helpline 181", "File an FIR", "Protection Order"],
+      "expected_helplines": ["181", "112"]
+    },
+    {
+      "id": "TRI_CR_03",
+      "category": "triage_criminal",
+      "language": "en",
+      "question": "Someone attacked me with a knife on the road and I am badly injured. What legal steps can I take?",
+      "expected_domain": "criminal",
+      "expected_situation_type": "assault",
+      "expected_sections": ["BNS Section 117", "BNS Section 118"],
+      "expected_action_steps": ["medical attention", "File an FIR", "medico-legal certificate"],
+      "expected_helplines": ["112", "108"]
+    },
+    {
+      "id": "TRI_CR_04",
+      "category": "triage_criminal",
+      "language": "en",
+      "question": "I invested Rs 5 lakh in a scheme that turned out to be a Ponzi scam. The person has disappeared now.",
+      "expected_domain": "criminal",
+      "expected_situation_type": "fraud",
+      "expected_sections": ["BNS Section 318", "BNS Section 319"],
+      "expected_action_steps": ["File an FIR", "Cyber Crime"],
+      "expected_helplines": ["112", "1930"]
+    },
+    {
+      "id": "TRI_CR_05",
+      "category": "triage_criminal",
+      "language": "te",
+      "question": "నా ఇంట్లో దొంగతనం జరిగింది, బంగారు నగలు పోయాయి. నేను ఏమి చేయాలి?",
+      "expected_domain": "criminal",
+      "expected_situation_type": "theft",
+      "expected_sections": ["BNS Section 303"],
+      "expected_action_steps": ["FIR", "112"],
+      "expected_helplines": ["112"]
+    },
+    {
+      "id": "TRI_CON_01",
+      "category": "triage_consumer",
+      "language": "en",
+      "question": "I bought a mobile phone online for Rs 25,000 but it stopped working after 2 days. The seller refuses to replace or refund.",
+      "expected_domain": "consumer",
+      "expected_situation_type": "defective_product",
+      "expected_sections": ["Consumer Protection Act"],
+      "expected_action_steps": ["complaint", "Consumer Forum", "District Commission"],
+      "expected_helplines": ["1915"]
+    },
+    {
+      "id": "TRI_CON_02",
+      "category": "triage_consumer",
+      "language": "en",
+      "question": "The insurance company rejected my health insurance claim saying it was a pre-existing condition, but I disclosed everything at the time of buying the policy.",
+      "expected_domain": "consumer",
+      "expected_situation_type": "service_deficiency",
+      "expected_sections": ["Consumer Protection Act"],
+      "expected_action_steps": ["complaint", "IRDAI", "Consumer Forum"],
+      "expected_helplines": ["1915"]
+    },
+    {
+      "id": "TRI_CON_03",
+      "category": "triage_consumer",
+      "language": "hi",
+      "question": "मैंने एक ऑनलाइन शॉपिंग साइट से सामान मंगवाया लेकिन 2 महीने हो गए, डिलीवरी नहीं हुई और रिफंड भी नहीं मिला।",
+      "expected_domain": "consumer",
+      "expected_situation_type": "service_deficiency",
+      "expected_sections": ["Consumer Protection Act"],
+      "expected_action_steps": ["Consumer Forum", "complaint"],
+      "expected_helplines": ["1915"]
+    },
+    {
+      "id": "TRI_CONST_01",
+      "category": "triage_constitutional",
+      "language": "en",
+      "question": "I filed an RTI application with the government office 3 months ago but they have not responded at all. What can I do?",
+      "expected_domain": "constitutional",
+      "expected_situation_type": "rti_denial",
+      "expected_sections": ["RTI Act", "Section 7"],
+      "expected_action_steps": ["First Appeal", "Information Commission", "30 days"],
+      "expected_helplines": []
+    },
+    {
+      "id": "TRI_CONST_02",
+      "category": "triage_constitutional",
+      "language": "en",
+      "question": "My child was denied admission to a government school because of our caste. Is this legal?",
+      "expected_domain": "constitutional",
+      "expected_situation_type": "fundamental_rights",
+      "expected_sections": ["Article 15", "Article 21A", "Right to Education Act"],
+      "expected_action_steps": ["complaint", "District Education Officer"],
+      "expected_helplines": []
+    },
+    {
+      "id": "TRI_CONST_03",
+      "category": "triage_constitutional",
+      "language": "en",
+      "question": "The police detained my brother for 3 days without producing him before a magistrate. What are his rights?",
+      "expected_domain": "constitutional",
+      "expected_situation_type": "fundamental_rights",
+      "expected_sections": ["Article 22", "Article 21"],
+      "expected_action_steps": ["habeas corpus", "High Court", "magistrate within 24 hours"],
+      "expected_helplines": []
+    },
+    {
+      "id": "TRI_FAM_01",
+      "category": "triage_family",
+      "language": "en",
+      "question": "My wife and I want to get divorced by mutual consent. What is the process and how long does it take?",
+      "expected_domain": "family",
+      "expected_situation_type": "divorce",
+      "expected_sections": ["Hindu Marriage Act", "Section 13B"],
+      "expected_action_steps": ["Family Court", "mutual consent petition", "6 months"],
+      "expected_helplines": []
+    },
+    {
+      "id": "TRI_FAM_02",
+      "category": "triage_family",
+      "language": "en",
+      "question": "I need maintenance from my estranged spouse for myself and my 2-year-old child. He earns well but provides no financial support. How can I get alimony?",
+      "expected_domain": "family",
+      "expected_situation_type": "maintenance",
+      "expected_sections": ["Section 125 CrPC", "Hindu Adoption and Maintenance Act"],
+      "expected_action_steps": ["Magistrate Court", "maintenance petition", "interim maintenance"],
+      "expected_helplines": ["181"]
+    },
+    {
+      "id": "TRI_FAM_03",
+      "category": "triage_family",
+      "language": "en",
+      "question": "After my father's death without a will, my uncle is claiming our ancestral property. What are my rights?",
+      "expected_domain": "property",
+      "expected_situation_type": "land_dispute",
+      "expected_sections": ["Hindu Succession Act"],
+      "expected_action_steps": ["legal heir certificate", "civil suit"],
+      "expected_helplines": []
+    },
+    {
+      "id": "TRI_LAB_01",
+      "category": "triage_labour",
+      "language": "en",
+      "question": "My company fired me without any notice or reason after 5 years of service. They are also not paying my last 2 months' salary and gratuity.",
+      "expected_domain": "labour",
+      "expected_situation_type": "wrongful_termination",
+      "expected_sections": ["Industrial Disputes Act", "Payment of Gratuity Act"],
+      "expected_action_steps": ["Labour Commissioner", "complaint", "conciliation"],
+      "expected_helplines": []
+    },
+    {
+      "id": "TRI_LAB_02",
+      "category": "triage_labour",
+      "language": "en",
+      "question": "My employer has not deposited my PF contribution for the last 8 months even though they deduct it from my salary every month.",
+      "expected_domain": "labour",
+      "expected_situation_type": "unpaid_wages",
+      "expected_sections": ["EPF Act"],
+      "expected_action_steps": ["EPFO complaint", "Regional PF Commissioner"],
+      "expected_helplines": []
+    },
+    {
+      "id": "TRI_CROSS_01",
+      "category": "triage_cross_domain",
+      "language": "en",
+      "question": "A man stalks me on my way to work every day and sends threatening messages. My boss at work also makes inappropriate comments. What should I do?",
+      "expected_domain": "criminal",
+      "expected_situation_type": "sexual_offence",
+      "expected_sections": ["BNS Section 78", "POSH Act"],
+      "expected_action_steps": ["FIR", "ICC complaint", "Women Helpline"],
+      "expected_helplines": ["181", "112"]
+    },
+    {
+      "id": "TRI_CROSS_02",
+      "category": "triage_cross_domain",
+      "language": "en",
+      "question": "My landlord illegally locked my rented shop and is threatening me with goons to vacate. He also took advance rent but refuses to return it.",
+      "expected_domain": "criminal",
+      "expected_situation_type": "criminal_general",
+      "expected_sections": ["Rent Control Act", "BNS Section 351"],
+      "expected_action_steps": ["FIR for criminal intimidation", "Rent Controller", "civil suit"],
+      "expected_helplines": ["112"]
+    }
   ]
 }
+

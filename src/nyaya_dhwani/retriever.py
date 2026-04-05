@@ -149,6 +149,7 @@ def get_retriever() -> Retriever:
     - ``"faiss"`` (default) → ``FaissRetriever``
     """
     backend = os.environ.get("NYAYA_RETRIEVAL_BACKEND", "faiss").strip().lower()
+    use_hybrid = os.environ.get("NYAYA_USE_HYBRID", "true").strip().lower() in ("1", "true", "yes")
 
     faiss_dir = _resolve_index_dir()
     faiss_ret = FaissRetriever(faiss_dir)
@@ -169,6 +170,16 @@ def get_retriever() -> Retriever:
                 "NYAYA_RETRIEVAL_BACKEND=vector_search but NYAYA_VS_ENDPOINT_NAME / "
                 "NYAYA_VS_INDEX_NAME not set — falling back to FAISS"
             )
+
+    # Wrap FAISS in HybridRetriever (BM25 + RRF + cross-ref expansion)
+    if use_hybrid:
+        try:
+            from nyaya_dhwani.hybrid_retriever import HybridRetriever
+            hybrid = HybridRetriever(faiss_ret)
+            logger.info("Using HybridRetriever (FAISS + BM25 + RRF, index_dir=%s)", faiss_dir)
+            return hybrid
+        except Exception:
+            logger.warning("Failed to init HybridRetriever, using plain FAISS", exc_info=True)
 
     logger.info("Using FaissRetriever (index_dir=%s)", faiss_dir)
     return faiss_ret

@@ -6,4 +6,5 @@ gradio-client==1.3.0
 huggingface-hub~=0.35.3
 pandas~=2.2.3
 databricks-sdk
+PyMuPDF
 -e ".[rag,rag_embed,app]"

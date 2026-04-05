@@ -18,3 +18,6 @@ env:
     value: "nyaya_vs_endpoint"
   - name: "NYAYA_VS_INDEX_NAME"
     value: "workspace.default.legal_rag_corpus_index"
+  # Hybrid retrieval (BM25 + dense + RRF fusion)
+  - name: "NYAYA_USE_HYBRID"
+    value: "true"

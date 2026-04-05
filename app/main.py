@@ -17,6 +17,7 @@ if _SRC.is_dir() and str(_SRC) not in sys.path:
 
 import gradio as gr
 import numpy as np
+import pandas as pd
 
 # ---------- Monkey-patch gradio_client bug (1.3.0 + Gradio 4.44.x) ----------
 # get_api_info() crashes on Chatbot schemas where additionalProperties is True
@@ -42,8 +43,18 @@ _gc_utils._json_schema_to_python_type = _safe_inner
 _gc_utils.get_type = _safe_get_type
 # ---------- End monkey-patch ------------------------------------------------
 
-from nyaya_dhwani.llm_client import chat_completions, extract_assistant_text, rag_user_message
+from nyaya_dhwani.llm_client import chat_completions, extract_assistant_text
 from nyaya_dhwani.retriever import Retriever, get_retriever
+from nyaya_dhwani.triage_engine import (
+    TRIAGE_SYSTEM_PROMPT,
+    build_triage_context,
+    format_triage_citations,
+    post_process_response,
+    detect_clarifying_needed,
+    format_clarifying_response,
+)
+from nyaya_dhwani.domain_classifier import classify_domain
+from nyaya_dhwani.query_logger import log_query
 from nyaya_dhwani.sarvam_client import (
     is_configured as sarvam_configured,
     numpy_audio_to_wav_bytes,
@@ -58,14 +69,14 @@ from nyaya_dhwani.sarvam_client import (
 logger = logging.getLogger(__name__)
 
 TOPIC_SEEDS: dict[str, str] = {
-    "Tenant rights": "What are my basic rights as a tenant in India regarding eviction and rent increases?",
-    "Divorce law": "What are the grounds for divorce under Indian law for mutual consent?",
-    "Consumer cases": "How do I file a consumer complaint in India for defective goods?",
-    "Property law": "What documents should I check before buying residential property in India?",
-    "Labour rights": "What are an employee's rights regarding notice period and gratuity?",
-    "FIR / Police": "What is the procedure to file an FIR and what are my rights when arrested?",
-    "Domestic violence": "What legal protections exist for victims of domestic violence in India?",
-    "RTI": "How do I file a Right to Information application and what fees apply?",
+    "Domestic violence": "My husband beats me regularly and threatens to throw me out, what can I do?",
+    "Defective product": "I bought a defective phone online and the seller is not responding to my complaint",
+    "RTI request": "I filed an RTI application to get my birth certificate but the officer denied it without reason",
+    "Illegal eviction": "My landlord is trying to evict me illegally without any notice period",
+    "Wrongful termination": "I was wrongfully terminated from my job without being given any notice or severance pay",
+    "FIR / Police": "Someone stole my motorcycle from outside my house, what should I do to file a complaint?",
+    "Property dispute": "My neighbour has built a wall encroaching on my property, what legal action can I take?",
+    "Consumer fraud": "An online seller charged me money but never delivered the product and is not refunding",
 }
 
 SARVAM_LANGUAGES: list[tuple[str, str]] = [
@@ -106,13 +117,7 @@ DISCLAIMER_EN = (
     "Consult a qualified lawyer for your specific situation."
 )
 
-SYSTEM_PROMPT = (
-    "You are Nyaya Dhwani, an assistant for Indian legal information. "
-    "Answer using the Context below when it is relevant. Cite Acts or sections when the context supports it. "
-    "If the context is insufficient, say so briefly. "
-    "Do not claim to be a lawyer. Keep answers clear and structured. "
-    "Respond in English."
-)
+SYSTEM_PROMPT = TRIAGE_SYSTEM_PROMPT
 
 
 def bcp47_target(lang: str) -> str:
@@ -160,22 +165,47 @@ def _format_citations(chunks_df) -> str:
     return "\n".join(lines) if lines else "(no metadata)"
 
 
-def _rag_answer_english(query_en: str) -> tuple[str, str]:
-    """LLM answer in English + citations block."""
+def _rag_answer_english(query_en: str) -> tuple[str, str, str, int]:
+    """Triage-enriched LLM answer in English + citations block.
+
+    Returns: (assistant_en, cites, domain_str, elapsed_ms)
+    """
+    import time as _time
+    t0 = _time.perf_counter()
+
+    # Phase 3: Check if query needs clarification before full triage
+    domains_quick = classify_domain(query_en)
+    clarify_qs = detect_clarifying_needed(query_en, domains_quick)
+    if clarify_qs:
+        clarify_response = format_clarifying_response(clarify_qs, query_en)
+        domain_str = domains_quick[0].domain if domains_quick else "unknown"
+        elapsed_ms = int((_time.perf_counter() - t0) * 1000)
+        return clarify_response, "(clarifying question — no retrieval yet)", domain_str, elapsed_ms
+
     rt = get_runtime()
     rt.load()
     q = query_en.strip()
-    chunks_df = rt.retriever.search(q, k=7)
-    texts = chunks_df["text"].tolist() if "text" in chunks_df.columns else []
-    user_content = rag_user_message([str(t) for t in texts], q)
+    chunks_df = rt.retriever.search(q, k=12)
+
+    # Build triage-enriched context (domain classification + action plan)
+    domains, action_plan, enriched_user_msg = build_triage_context(q, chunks_df)
+
     messages = [
         {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "user", "content": user_content},
+        {"role": "user", "content": enriched_user_msg},
     ]
-    raw = chat_completions(messages, max_tokens=2048, temperature=0.2)
+    raw = chat_completions(messages, max_tokens=3072, temperature=0.2)
     assistant_en = extract_assistant_text(raw)
-    cites = _format_citations(chunks_df)
-    return assistant_en, cites
+
+    # Post-process: ensure helplines/fees from action plan appear in response
+    assistant_en = post_process_response(assistant_en, action_plan)
+
+    cites = format_triage_citations(chunks_df, domains)
+
+    domain_str = domains[0].domain if domains else "unknown"
+    elapsed_ms = int((_time.perf_counter() - t0) * 1000)
+
+    return assistant_en, cites, domain_str, elapsed_ms
 
 
 _TRANSLATE_CHUNK_LIMIT = 500  # Sarvam Mayura works best with shorter text
@@ -338,10 +368,24 @@ def run_turn(
     history = [list(pair) for pair in history] if history else []
     try:
         user_show, q_en = resolve_user_message(message, audio, lang)
-        assistant_en, cites = _rag_answer_english(q_en)
+        assistant_en, cites, domain_str, elapsed_ms = _rag_answer_english(q_en)
         reply_md = build_reply_markdown(assistant_en, cites, lang)
         history.append([user_show, reply_md])
         audio_out = maybe_tts(reply_md, lang, tts_on)
+
+        # Log query asynchronously (best-effort, non-blocking)
+        try:
+            log_query(
+                user_lang=lang,
+                query_text=message or "(audio)",
+                query_en=q_en,
+                domain_detected=domain_str,
+                response_en=assistant_en,
+                response_time_ms=elapsed_ms,
+            )
+        except Exception:
+            logger.debug("Query logging failed (non-fatal)", exc_info=True)
+
         return "", history, audio_out, None
     except Exception as e:
         logger.exception("run_turn")
@@ -351,6 +395,84 @@ def run_turn(
 
 
 def build_app() -> gr.Blocks:
+    # ---- Analytics helpers (3C) ----
+    def _load_query_logs() -> pd.DataFrame:
+        """Load query logs from Delta or CSV fallback."""
+        try:
+            from pyspark.sql import SparkSession
+            spark = SparkSession.builder.getOrCreate()
+            table = os.environ.get("NYAYA_LOG_TABLE", "workspace.default.query_logs")
+            return spark.table(table).toPandas()
+        except Exception:
+            pass
+        csv_path = os.environ.get("NYAYA_LOG_CSV", "/tmp/nyaya_query_logs.csv")
+        if os.path.exists(csv_path):
+            return pd.read_csv(csv_path)
+        return pd.DataFrame()
+
+    def _refresh_analytics():
+        """Generate analytics summary markdown + dataframe preview."""
+        import json as _json
+        df = _load_query_logs()
+        if df.empty:
+            return "**No queries logged yet.** Start chatting to see analytics here!", None
+
+        total = len(df)
+        lines = [f"## Analytics Dashboard\n", f"**Total queries:** {total}\n"]
+
+        # Domain breakdown
+        if "domain_detected" in df.columns:
+            domain_counts = df["domain_detected"].value_counts()
+            lines.append("### Legal Domain Breakdown")
+            for domain, count in domain_counts.items():
+                pct = count / total * 100
+                bar = "█" * int(pct / 5) + "░" * (20 - int(pct / 5))
+                lines.append(f"- **{domain}**: {count} ({pct:.0f}%) `{bar}`")
+            lines.append("")
+
+        # Language breakdown
+        if "user_lang" in df.columns:
+            lang_counts = df["user_lang"].value_counts()
+            lang_names = dict(SARVAM_LANGUAGES)
+            lines.append("### Language Distribution")
+            for lang_code, count in lang_counts.items():
+                name = lang_names.get(lang_code, lang_code)
+                lines.append(f"- **{name}** ({lang_code}): {count}")
+            lines.append("")
+
+        # Avg response time
+        if "response_time_ms" in df.columns:
+            avg_ms = df["response_time_ms"].mean()
+            lines.append(f"### Performance\n- **Avg response time:** {avg_ms:.0f}ms")
+            lines.append("")
+
+        # Most cited sections
+        if "sections_cited" in df.columns:
+            all_sections = []
+            for raw in df["sections_cited"].dropna():
+                try:
+                    secs = _json.loads(raw) if isinstance(raw, str) else raw
+                    if isinstance(secs, list):
+                        all_sections.extend(secs)
+                except Exception:
+                    pass
+            if all_sections:
+                from collections import Counter
+                sec_counts = Counter(all_sections).most_common(10)
+                lines.append("### Most Cited Legal Provisions (Top 10)")
+                for sec, cnt in sec_counts:
+                    lines.append(f"- **{sec}**: cited {cnt} time(s)")
+                lines.append("")
+
+        summary_md = "\n".join(lines)
+
+        # Recent queries table
+        display_cols = [c for c in ["timestamp", "user_lang", "domain_detected", "query_text", "response_time_ms"]
+                        if c in df.columns]
+        recent = df[display_cols].tail(20).iloc[::-1] if display_cols else df.tail(20).iloc[::-1]
+
+        return summary_md, recent
+
     custom_css = """
     /* Light theme */
     .gradio-container { background-color: #F7F3ED !important; }
@@ -372,65 +494,83 @@ def build_app() -> gr.Blocks:
     with gr.Blocks(
         theme=gr.themes.Soft(primary_hue="slate", secondary_hue="orange"),
         css=custom_css,
-        title="Nyaya Dhwani",
+        title="Nyaya-Sahayak",
     ) as demo:
         gr.Markdown(
-            "# Nyaya Dhwani · न्याय ध्वनि\n"
-            "*Legal information assistant for India · Not a substitute for legal counsel*"
+            "# Nyaya-Sahayak · न्याय सहायक\n"
+            "*Your Legal First-Response Assistant · Powered by Databricks + Sarvam AI*"
         )
 
         lang_state = gr.State("en")
 
-        with gr.Column(visible=True) as welcome_col:
-            gr.Markdown("### Welcome")
-            lang_radio = gr.Radio(
-                choices=[(c[1], c[0]) for c in SARVAM_LANGUAGES],  # (label, value)
-                value="en",
-                label="Select your language / अपनी भाषा चुनें",
-                info="Non-English questions are translated to English for retrieval, "
-                "then answers are translated back to your language.",
-            )
+        with gr.Tabs():
+          with gr.Tab("💬 Legal Chat"):
+            with gr.Column(visible=True) as welcome_col:
+                gr.Markdown("### Welcome")
+                lang_radio = gr.Radio(
+                    choices=[(c[1], c[0]) for c in SARVAM_LANGUAGES],  # (label, value)
+                    value="en",
+                    label="Select your language / अपनी भाषा चुनें",
+                    info="Non-English questions are translated to English for retrieval, "
+                    "then answers are translated back to your language.",
+                )
 
-            begin_btn = gr.Button("Begin / शुरू करें", variant="primary")
-            gr.Markdown(
-                "<small>Not a substitute for legal counsel · General information only · "
-                "Powered by Sarvam (STT / translate / TTS) when configured</small>"
-            )
+                begin_btn = gr.Button("Begin / शुरू करें", variant="primary")
+                gr.Markdown(
+                    "<small>Not a substitute for legal counsel · General information only · "
+                    "Powered by Sarvam (STT / translate / TTS) when configured</small>"
+                )
 
-        with gr.Column(visible=False) as chat_col:
-            gr.Markdown("### Chat")
-            current_lang = gr.Markdown("*Session language: English*")
+            with gr.Column(visible=False) as chat_col:
+                gr.Markdown("### Chat")
+                current_lang = gr.Markdown("*Session language: English*")
 
-            topic = gr.Radio(
-                choices=list(TOPIC_SEEDS.keys()),
-                label="Common topics",
-                value=None,
-            )
-            chatbot = gr.Chatbot(
-                label="Nyaya Dhwani",
-                height=420,
-                bubble_full_width=False,
-            )
-            msg = gr.Textbox(
-                placeholder="Type your legal question in any supported language…",
-                show_label=False,
-                lines=2,
-            )
-            audio_in = gr.Audio(
-                sources=["microphone"],
-                type="numpy",
-                label="Or speak your question",
-            )
-            tts_cb = gr.Checkbox(
-                label="Read answer aloud",
-                value=True,
-            )
-            tts_out = gr.Audio(
-                label="Listen to answer",
-                type="numpy",
+                topic = gr.Radio(
+                    choices=list(TOPIC_SEEDS.keys()),
+                    label="Common topics",
+                    value=None,
+                )
+                chatbot = gr.Chatbot(
+                    label="Nyaya-Sahayak",
+                    height=420,
+                    bubble_full_width=False,
+                )
+                msg = gr.Textbox(
+                    placeholder="Type your legal question in any supported language…",
+                    show_label=False,
+                    lines=2,
+                )
+                audio_in = gr.Audio(
+                    sources=["microphone"],
+                    type="numpy",
+                    label="Or speak your question",
+                )
+                tts_cb = gr.Checkbox(
+                    label="Read answer aloud",
+                    value=True,
+                )
+                tts_out = gr.Audio(
+                    label="Listen to answer",
+                    type="numpy",
+                    interactive=False,
+                )
+                submit = gr.Button("Send", variant="primary")
+
+          with gr.Tab("📊 Analytics"):
+            gr.Markdown("### Query Analytics Dashboard")
+            gr.Markdown("*View usage statistics, domain distribution, and most cited legal provisions.*")
+            refresh_btn = gr.Button("🔄 Refresh Analytics", variant="secondary")
+            analytics_md = gr.Markdown("**Click 'Refresh Analytics' to load data.**")
+            analytics_table = gr.Dataframe(
+                label="Recent Queries",
                 interactive=False,
+                wrap=True,
             )
-            submit = gr.Button("Send", variant="primary")
+            refresh_btn.click(
+                _refresh_analytics,
+                inputs=[],
+                outputs=[analytics_md, analytics_table],
+            )
 
         def on_begin(lang_code: str):
             labels = dict(SARVAM_LANGUAGES)
@@ -467,6 +607,8 @@ def build_app() -> gr.Blocks:
         audio_in.stop_recording(**_run_turn_io)
 
         gr.Markdown(
+            "<small>⚖️ This is informational guidance only — not a substitute for legal counsel. "
+            "Consult a qualified lawyer for your specific situation.</small>\n\n"
             "<small>Powered by Databricks (Llama Maverick + Vector Search) · "
             "Sarvam AI (translation, speech-to-text, text-to-speech)</small>"
         )
