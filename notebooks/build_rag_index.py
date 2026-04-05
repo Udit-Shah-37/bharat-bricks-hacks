@@ -129,7 +129,7 @@ print(manifest.to_json())
 # COMMAND ----------
 
 # Smoke test load
-from nyaya_dhwani.retrieval import CorpusIndex
+from nyaya_dhwani.retrievers.faiss_index import CorpusIndex
 
 ci = CorpusIndex.load(OUT_DIR)
 q = embedder.encode(["What is theft under BNS?"])

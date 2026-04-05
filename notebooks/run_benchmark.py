@@ -51,10 +51,10 @@ RUN_ID = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
 print(f"Benchmark run: {RUN_ID}")
 
 # Verify imports
-from nyaya_dhwani.retrieval import CorpusIndex
+from nyaya_dhwani.retrievers.faiss_index import CorpusIndex
 from nyaya_dhwani.embedder import SentenceEmbedder
-from nyaya_dhwani.retriever import FaissRetriever
-from nyaya_dhwani.vs_retriever import VectorSearchRetriever
+from nyaya_dhwani.retrievers import FaissRetriever
+from nyaya_dhwani.retrievers import VectorSearchRetriever
 from nyaya_dhwani.keyword_boost import detect_section_references, boost_with_keywords
 from nyaya_dhwani.llm_client import chat_completions, extract_assistant_text, rag_user_message
 from nyaya_dhwani.sarvam_client import translate_text, is_configured as sarvam_configured

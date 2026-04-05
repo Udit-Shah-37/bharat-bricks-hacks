@@ -30,10 +30,13 @@ class VectorSearchRetriever:
         """Return the vector_search_indexes API client (not the index object)."""
         if self._index is not None:
             return self._index
-        from databricks.sdk import WorkspaceClient
+        from databricks.sdk import WorkspaceClient  # type: ignore[import-not-found]
         self._index = WorkspaceClient().vector_search_indexes
-        logger.info("VectorSearchRetriever: connected to endpoint %s, index %s",
-                     self._endpoint_name, self._index_name)
+        logger.info(
+            "VectorSearchRetriever: connected to endpoint %s, index %s",
+            self._endpoint_name,
+            self._index_name,
+        )
         return self._index
 
     def search(self, query: str, k: int = 7) -> pd.DataFrame:
@@ -41,14 +44,10 @@ class VectorSearchRetriever:
         client = self._get_client()
         index_name = self._index_name
 
-        # Detect IPC/BNS section references for targeted filtering.
         refs = detect_section_references(query)
-        filters = None
-        if refs:
-            filters = {"doc_type": "law_mapping"}
+        filters = {"doc_type": "law_mapping"} if refs else None
 
         try:
-            # First: if we have section references, do a filtered search for mappings.
             mapping_rows = []
             if filters:
                 try:
@@ -63,7 +62,6 @@ class VectorSearchRetriever:
                 except Exception:
                     logger.debug("Filtered VS search failed, continuing with unfiltered", exc_info=True)
 
-            # Main unfiltered search.
             resp = client.query_index(
                 index_name=index_name,
                 columns=_RESULT_COLUMNS,
@@ -72,7 +70,6 @@ class VectorSearchRetriever:
             )
             main_rows = _response_to_rows(resp)
 
-            # Merge: mapping results first, then main results (deduplicated).
             seen_ids = set()
             combined = []
             for row in mapping_rows + main_rows:
@@ -98,8 +95,6 @@ class VectorSearchRetriever:
 def _response_to_rows(resp) -> list[dict]:
     """Convert a VS similarity_search/query_index response to a list of dicts."""
     rows = []
-    # The SDK may return a dataclass or a dict depending on version.
-    # Convert to dict first if possible.
     if hasattr(resp, "as_dict"):
         resp = resp.as_dict()
     try:
@@ -115,7 +110,6 @@ def _response_to_rows(resp) -> list[dict]:
 
         for row_data in data_array:
             row = dict(zip(col_names, row_data))
-            # VS returns a score column (typically named "score" or the last column).
             if "score" not in row:
                 row["score"] = row.pop(col_names[-1], 0.0) if len(col_names) > len(_RESULT_COLUMNS) else 0.0
             rows.append(row)

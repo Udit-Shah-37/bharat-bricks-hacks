@@ -11,7 +11,6 @@ import os
 sys.path.insert(0, '/Workspace/Users/saisandeshk@iisc.ac.in/bharat-bricks-hacks/src')
 
 import logging
-from dataclasses import dataclass, field
 
 import pandas as pd
 
@@ -24,9 +23,6 @@ from nyaya_dhwani.case_knowledge import (
     format_case_references,
     get_government_schemes,
     format_scheme_context,
-    StrengthAssessment,
-    CaseReference,
-    GovernmentScheme,
 )
 
 logger = logging.getLogger(__name__)
@@ -97,24 +93,6 @@ End with: **⚖️ This is informational guidance only. Please consult a qualifi
 - Use markdown headers (##, ###) and bullet points for readability.
 - When multiple legal domains apply (e.g., unlawful arrest = criminal + constitutional), address ALL.
 """
-
-
-# ---------------------------------------------------------------------------
-# Data classes
-# ---------------------------------------------------------------------------
-
-@dataclass
-class TriageResult:
-    """Complete triage output for a user query."""
-    query_en: str
-    domains: list[DomainMatch]
-    action_plan: ActionPlan | None
-    retrieved_chunks: pd.DataFrame
-    llm_response: str
-    citations: str
-    strength: StrengthAssessment | None = None
-    similar_cases: list[CaseReference] = field(default_factory=list)
-    schemes: list[GovernmentScheme] = field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------
@@ -198,7 +176,7 @@ def detect_clarifying_needed(query_en: str, domains: list[DomainMatch]) -> list[
     return None
 
 
-def format_clarifying_response(questions: list[str], query_en: str) -> str:
+def format_clarifying_response(questions: list[str]) -> str:
     """Format clarifying questions as a friendly markdown response."""
     lines = [
         "I want to help you with the best possible guidance. To do that, could you provide a bit more detail?\n",
@@ -215,7 +193,11 @@ def format_clarifying_response(questions: list[str], query_en: str) -> str:
 # Core triage functions
 # ---------------------------------------------------------------------------
 
-def build_triage_context(query_en: str, chunks_df: pd.DataFrame) -> tuple[list[DomainMatch], ActionPlan | None, str]:
+def build_triage_context(
+    query_en: str,
+    chunks_df: pd.DataFrame,
+    history_context: str = "",
+) -> tuple[list[DomainMatch], ActionPlan | None, str]:
     """Classify domain, look up action plan, and build enriched context for LLM.
 
     Returns: (domains, action_plan, enriched_user_message)
@@ -291,7 +273,11 @@ def build_triage_context(query_en: str, chunks_df: pd.DataFrame) -> tuple[list[D
 
     combined_context = "\n\n".join(parts) if parts else "(No relevant context found)"
 
-    user_message = f"Context:\n{combined_context}\n\nUser's situation: {query_en}"
+    conversation_block = ""
+    if history_context.strip():
+        conversation_block = f"\n\nConversation history:\n{history_context.strip()}"
+
+    user_message = f"Context:\n{combined_context}{conversation_block}\n\nUser's situation: {query_en}"
 
     return domains, action_plan, user_message
 
