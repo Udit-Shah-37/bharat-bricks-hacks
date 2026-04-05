@@ -2,14 +2,6 @@
 
 Nyaya-Saathi is a multilingual legal first-response assistant for Indian citizens. It uses Databricks-hosted LLM and retrieval infrastructure to convert a user situation into grounded legal guidance, practical next steps, and cited references.
 
-## Hackathon Requirement Checklist
-
-- Public GitHub repo: keep this repository public for at least 30 days after submission.
-- Architecture diagram: included below.
-- What it does (1-2 sentences): included above.
-- How to run (exact commands): included below.
-- Demo steps (what to click / what prompt to run): included below.
-
 ## Architecture Diagram
 
 ```mermaid
