@@ -312,28 +312,41 @@ def _apply_styles() -> None:
         @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&family=Playfair+Display:wght@700&display=swap');
 
         :root {
-            --bg: #f5efe6;
-            --paper: #fffaf3;
-            --ink: #1f2a37;
-            --muted: #5b6470;
-            --brand: #a24d12;
-            --brand-strong: #7c3608;
-            --border: #eadfce;
-            --chat-user: #fff6e8;
+            --bg: #f6f2ea;
+            --paper: #fffdfa;
+            --ink: #1f2933;
+            --muted: #5a6572;
+            --brand: #8f4313;
+            --brand-strong: #6c2f09;
+            --border: #e8dece;
+            --chat-user: #fef6ea;
+            --chat-assistant: #ffffff;
+            --focus: #b65a1f;
         }
 
-        .stApp {
+        .stApp,
+        [data-testid="stAppViewContainer"],
+        [data-testid="stHeader"] {
             font-family: 'Manrope', 'Segoe UI', sans-serif;
             color: var(--ink);
             background:
-                radial-gradient(1000px 500px at 10% -10%, #f6d9b8 0%, transparent 45%),
-                radial-gradient(900px 450px at 100% 0%, #f0d8c2 0%, transparent 40%),
+                radial-gradient(900px 450px at 8% -10%, #f7ddc0 0%, transparent 46%),
+                radial-gradient(760px 420px at 100% -5%, #ecdac8 0%, transparent 42%),
                 var(--bg);
         }
 
-        h1, h2, h3 {
+        .stApp,
+        .stApp p,
+        .stApp span,
+        .stApp label,
+        .stApp li,
+        .stApp div {
+            color: var(--ink);
+        }
+
+        h1, h2, h3, h4 {
             font-family: 'Playfair Display', Georgia, serif;
-            color: #2d1f10;
+            color: #2b2014;
         }
 
         [data-testid="stSidebar"] {
@@ -341,10 +354,41 @@ def _apply_styles() -> None:
             border-left: 1px solid var(--border);
         }
 
+        [data-testid="stSidebar"] * {
+            color: var(--ink);
+        }
+
+        [data-baseweb="select"] > div,
+        [data-baseweb="input"] > div,
+        [data-baseweb="textarea"] > div,
+        .stTextInput input,
+        .stTextArea textarea,
+        .stSelectbox div[data-baseweb="select"] > div,
+        .stMultiSelect div[data-baseweb="select"] > div,
+        .stFileUploader [data-testid="stFileUploaderDropzone"],
+        [data-testid="stChatInput"] textarea,
+        [data-testid="stChatInput"] input {
+            background: #ffffff !important;
+            color: var(--ink) !important;
+            border-color: var(--border) !important;
+        }
+
+        [data-baseweb="select"] [role="option"],
+        [data-baseweb="popover"] * {
+            color: var(--ink) !important;
+        }
+
+        [data-testid="stChatInput"] {
+            background: #fffdf9;
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 2px;
+        }
+
         [data-testid="stChatMessage"] {
             border: 1px solid var(--border);
             border-radius: 14px;
-            background: #fffcf8;
+            background: var(--chat-assistant);
             padding: 0.3rem 0.7rem;
         }
 
@@ -357,6 +401,24 @@ def _apply_styles() -> None:
             color: white;
             background: linear-gradient(135deg, var(--brand), var(--brand-strong));
             box-shadow: 0 6px 18px rgba(124, 54, 8, 0.22);
+        }
+
+        .stButton > button:hover, .stDownloadButton > button:hover {
+            filter: brightness(1.05);
+        }
+
+        .stButton > button:focus, .stDownloadButton > button:focus,
+        [data-testid="stChatInput"] textarea:focus,
+        [data-testid="stChatInput"] input:focus {
+            outline: 2px solid var(--focus) !important;
+            outline-offset: 1px;
+        }
+
+        [data-testid="stDataFrame"],
+        [data-testid="stTable"] {
+            background: #fffdfa;
+            border: 1px solid var(--border);
+            border-radius: 10px;
         }
 
         .subtle-note {
