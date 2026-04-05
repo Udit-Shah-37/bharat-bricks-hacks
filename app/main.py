@@ -175,7 +175,7 @@ def resolve_user_message(text: str, audio_bytes: bytes | None, lang: str) -> tup
 
 
 def build_reply_markdown(assistant_en: str, cites: str, lang: str) -> str:
-    """Build response with translated text first and English as reference."""
+    """Build response markdown in session language with references and disclaimer."""
     sources_block = f"**References used**\n{cites}"
 
     if lang == "en" or not sarvam_configured():
@@ -191,7 +191,6 @@ def build_reply_markdown(assistant_en: str, cites: str, lang: str) -> str:
     lang_label = dict(SARVAM_LANGUAGES).get(lang, lang)
     return (
         f"**{lang_label}:**\n\n{body_translated}\n\n"
-        f"---\n**English:**\n\n{assistant_en}\n\n"
         f"---\n{sources_block}"
         f"\n\n---\n*{disc_translated}*"
     )
