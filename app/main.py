@@ -590,7 +590,7 @@ def render_app() -> None:
     _apply_styles()
     _init_session_state()
 
-    st.title("Nyaya-Sahayak · न्याय सहायक")
+    st.title("Nyaya-Saathi · न्याय साथी")
     st.caption("Your legal first-response assistant powered by Databricks and Sarvam AI.")
 
     with st.sidebar:
