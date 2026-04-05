@@ -188,7 +188,7 @@ class HybridRetriever:
 
         rows = []
         seen = set()
-        for doc_idx, rrf_score in fused[:k]:
+        for doc_idx, rrf_score in fused[:k * 2]:  # over-fetch for diversity
             if doc_idx in seen or doc_idx >= len(self._all_chunks):
                 continue
             seen.add(doc_idx)
@@ -203,3 +203,84 @@ class HybridRetriever:
         result_df = pd.DataFrame(rows)
         result_df = expand_with_cross_refs(result_df, self._all_chunks, max_expansion=2)
         return result_df.head(k).reset_index(drop=True)
+
+    def _ensure_source_diversity(
+        self, result_df: pd.DataFrame, query: str, k: int, seen: set
+    ) -> pd.DataFrame:
+        """Ensure results span statutes, constitutional provisions, and SC judgments.
+
+        If a source type is missing from the top-k results but exists in the
+        corpus, do a targeted sub-search and inject the best match.
+        """
+        if "doc_type" not in result_df.columns or "doc_type" not in self._all_chunks.columns:
+            return result_df
+
+        # Classify result doc_types into 3 buckets
+        has_statute = False
+        has_constitutional = False
+        has_sc_judgment = False
+
+        for dt in result_df["doc_type"].fillna("").str.lower():
+            if dt in ("constitutional_law",):
+                has_constitutional = True
+            elif dt in ("sc_judgment", "sc_judgment_qa"):
+                has_sc_judgment = True
+            else:
+                has_statute = True
+
+        # How many diversity slots to allocate
+        diversity_slots = max(1, k // 4)  # at least 1 slot per missing type
+
+        additions = []
+
+        # Check if constitutional chunks exist in corpus
+        if not has_constitutional:
+            const_mask = self._all_chunks["doc_type"].fillna("").str.lower() == "constitutional_law"
+            if const_mask.any():
+                const_chunks = self._all_chunks[const_mask]
+                # Use BM25 to find most relevant constitutional chunk for this query
+                best = self._find_best_in_subset(query, const_chunks, seen, limit=diversity_slots)
+                additions.extend(best)
+                if best:
+                    logger.info("Diversity: injected %d constitutional chunks", len(best))
+
+        # Check if SC judgment chunks exist in corpus
+        if not has_sc_judgment:
+            sc_mask = self._all_chunks["doc_type"].fillna("").str.lower().isin(
+                ["sc_judgment", "sc_judgment_qa"]
+            )
+            if sc_mask.any():
+                sc_chunks = self._all_chunks[sc_mask]
+                best = self._find_best_in_subset(query, sc_chunks, seen, limit=diversity_slots)
+                additions.extend(best)
+                if best:
+                    logger.info("Diversity: injected %d SC judgment chunks", len(best))
+
+        if additions:
+            return pd.concat([result_df, pd.DataFrame(additions)], ignore_index=True)
+        return result_df
+
+    def _find_best_in_subset(
+        self, query: str, subset_df: pd.DataFrame, seen: set, limit: int = 2
+    ) -> list[dict]:
+        """Find the most relevant chunks in a subset using BM25 keyword matching."""
+        # Build a mini BM25 over the subset
+        texts = subset_df["text"].fillna("").tolist()
+        indices = subset_df.index.tolist()
+
+        mini_bm25 = BM25().fit(texts)
+        hits = mini_bm25.query(query, k=limit + 5)
+
+        results = []
+        for local_idx, score in hits:
+            if len(results) >= limit:
+                break
+            global_idx = indices[local_idx]
+            if global_idx in seen:
+                continue
+            seen.add(global_idx)
+            r = self._all_chunks.iloc[global_idx].to_dict()
+            r["score"] = score * 0.3  # discount diversity-injected results
+            r["rank"] = -1  # mark as diversity-injected
+            results.append(r)
+        return results
