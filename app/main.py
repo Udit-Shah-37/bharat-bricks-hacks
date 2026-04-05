@@ -221,7 +221,7 @@ def build_reply_markdown(assistant_en: str, cites: str, lang: str) -> str:
     lang_label = dict(SARVAM_LANGUAGES).get(lang, lang)
     return (
         f"**{lang_label}:**\n\n{body_translated}\n\n"
-        f"---\n{sources_block}"
+        # f"---\n{sources_block}"
         f"\n\n---\n*{disc_translated}*"
     )
 
