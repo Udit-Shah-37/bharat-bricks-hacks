@@ -332,6 +332,7 @@ def _init_session_state() -> None:
     st.session_state.setdefault("latest_tts", None)
     st.session_state.setdefault("analytics_summary", "")
     st.session_state.setdefault("analytics_table", None)
+    st.session_state.setdefault("pending_turns", [])
 
 
 def _apply_styles() -> None:
@@ -503,7 +504,7 @@ def _apply_styles() -> None:
     )
 
 
-def _submit_turn_with_feedback(
+def _enqueue_turn(
     *,
     text: str,
     audio_bytes: bytes | None,
@@ -512,9 +513,26 @@ def _submit_turn_with_feedback(
 ) -> None:
     preview = user_preview if user_preview is not None else (text.strip() if text.strip() else "🎤 Processing voice input...")
     st.session_state.messages.append({"role": "user", "content": preview})
+    user_idx = len(st.session_state.messages) - 1
+    st.session_state.pending_turns.append(
+        {
+            "text": text,
+            "audio_bytes": audio_bytes,
+            "query_text_for_log": query_text_for_log,
+            "user_index": user_idx,
+        }
+    )
 
-    with st.chat_message("user"):
-        st.markdown(preview)
+
+def _process_next_turn() -> None:
+    if not st.session_state.pending_turns:
+        return
+
+    turn = st.session_state.pending_turns.pop(0)
+    text = turn.get("text", "")
+    audio_bytes = turn.get("audio_bytes")
+    query_text_for_log = turn.get("query_text_for_log")
+    user_index = int(turn.get("user_index", len(st.session_state.messages) - 1))
 
     with st.chat_message("assistant"):
         response_placeholder = st.empty()
@@ -525,7 +543,9 @@ def _submit_turn_with_feedback(
                     audio_bytes=audio_bytes,
                 )
 
-                st.session_state.messages[-1]["content"] = user_show
+                if 0 <= user_index < len(st.session_state.messages):
+                    st.session_state.messages[user_index]["content"] = user_show
+
                 st.session_state.history_pairs.append([user_show, reply_md])
                 st.session_state.messages.append({"role": "assistant", "content": reply_md})
                 st.session_state.latest_tts = maybe_tts_bytes(
@@ -576,11 +596,6 @@ def render_app() -> None:
     st.title("Nyaya-Sahayak · न्याय सहायक")
     st.caption("Your legal first-response assistant powered by Databricks and Sarvam AI.")
 
-    pending_text: str | None = None
-    pending_audio_bytes: bytes | None = None
-    pending_user_preview: str | None = None
-    pending_query_text_for_log: str | None = None
-
     with st.sidebar:
         st.subheader("Session")
         lang_map = {label: code for code, label in SARVAM_LANGUAGES}
@@ -601,10 +616,13 @@ def render_app() -> None:
 
         topic = st.selectbox("Quick start prompt", options=["Choose a topic..."] + list(TOPIC_SEEDS.keys()))
         if st.button("Ask quick prompt", use_container_width=True) and topic in TOPIC_SEEDS:
-            pending_text = TOPIC_SEEDS[topic]
-            pending_audio_bytes = None
-            pending_user_preview = pending_text
-            pending_query_text_for_log = pending_text
+            _enqueue_turn(
+                text=TOPIC_SEEDS[topic],
+                audio_bytes=None,
+                user_preview=TOPIC_SEEDS[topic],
+                query_text_for_log=TOPIC_SEEDS[topic],
+            )
+            st.rerun()
 
         st.markdown("---")
         st.subheader("Voice")
@@ -618,15 +636,19 @@ def render_app() -> None:
             if audio_file is None:
                 st.warning("Record audio first.")
             else:
-                pending_text = ""
-                pending_audio_bytes = audio_file.getvalue()
-                pending_user_preview = "🎤 Processing voice input..."
-                pending_query_text_for_log = "(audio)"
+                _enqueue_turn(
+                    text="",
+                    audio_bytes=audio_file.getvalue(),
+                    user_preview="🎤 Processing voice input...",
+                    query_text_for_log="(audio)",
+                )
+                st.rerun()
 
         if st.button("Clear chat", use_container_width=True):
             st.session_state.messages = []
             st.session_state.history_pairs = []
             st.session_state.latest_tts = None
+            st.session_state.pending_turns = []
             st.rerun()
 
         with st.expander("Usage analytics", expanded=False):
@@ -654,22 +676,18 @@ def render_app() -> None:
         with st.chat_message(msg["role"]):
             st.markdown(msg["content"])
 
-    if pending_text is not None or pending_audio_bytes is not None:
-        _submit_turn_with_feedback(
-            text=pending_text or "",
-            audio_bytes=pending_audio_bytes,
-            user_preview=pending_user_preview,
-            query_text_for_log=pending_query_text_for_log,
-        )
+    if st.session_state.pending_turns:
+        _process_next_turn()
 
     user_text = st.chat_input("Ask your legal question in any supported language...")
     if user_text:
-        _submit_turn_with_feedback(
+        _enqueue_turn(
             text=user_text,
             audio_bytes=None,
             user_preview=user_text,
             query_text_for_log=user_text,
         )
+        st.rerun()
 
     if st.session_state.latest_tts:
         st.audio(st.session_state.latest_tts, format="audio/wav")
