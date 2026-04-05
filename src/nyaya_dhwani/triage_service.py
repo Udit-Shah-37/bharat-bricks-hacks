@@ -115,7 +115,7 @@ class TriageService:
             )
             raise
 
-        domains, action_plan, enriched_user_msg = build_triage_context(
+        domains, _action_plan, enriched_user_msg = build_triage_context(
             query_en,
             chunks_df,
             history_context=history_context,
@@ -127,7 +127,7 @@ class TriageService:
         ]
         raw = chat_completions(messages, max_tokens=3072, temperature=0.3)
         assistant_en = extract_assistant_text(raw)
-        assistant_en = post_process_response(assistant_en, action_plan)
+        assistant_en = post_process_response(assistant_en)
 
         citations = format_triage_citations(chunks_df, domains)
         domain = domains[0].domain if domains else "unknown"
