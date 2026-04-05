@@ -54,7 +54,7 @@ Translated to English (Sarvam Mayura)
 Semantic search over 900+ legal text chunks (FAISS)
         │
         ▼
-Top 5 relevant chunks sent to Databricks Llama Maverick LLM
+Top 5 relevant chunks sent to Databricks GPT-5.4-mini LLM
         │
         ▼
 English answer generated with citations

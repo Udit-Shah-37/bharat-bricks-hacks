@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -13,6 +14,9 @@ from nyaya_dhwani.manifest import RAGManifest
 
 if TYPE_CHECKING:
     from numpy.typing import NDArray
+
+
+logger = logging.getLogger(__name__)
 
 
 class CorpusIndex:
@@ -27,10 +31,22 @@ class CorpusIndex:
     def load(cls, index_dir: str | Path) -> "CorpusIndex":
         faiss = get_faiss()
         index_dir = Path(index_dir)
-        manifest = RAGManifest.load(index_dir / "manifest.json")
-        idx = faiss.read_index(str(index_dir / manifest.faiss_index_file))
-        chunks = pd.read_parquet(index_dir / manifest.chunks_parquet_file)
-        return cls(manifest, idx, chunks)
+        manifest_path = index_dir / "manifest.json"
+        try:
+            manifest = RAGManifest.load(manifest_path)
+            idx_path = index_dir / manifest.faiss_index_file
+            chunks_path = index_dir / manifest.chunks_parquet_file
+            idx = faiss.read_index(str(idx_path))
+            chunks = pd.read_parquet(chunks_path)
+            return cls(manifest, idx, chunks)
+        except Exception:
+            logger.exception(
+                "CorpusIndex.load failed for index_dir=%s (manifest=%s). "
+                "Check file availability and READ permissions.",
+                index_dir,
+                manifest_path,
+            )
+            raise
 
     def search(
         self,

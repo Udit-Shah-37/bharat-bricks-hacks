@@ -2,7 +2,7 @@
 
 This document connects three layers: **Playground Get code** → **environment variables (and Secrets)** → **Databricks App** runtime (Gradio + RAG + Sarvam). Use it with [PLAN.md](PLAN.md) ([Deploy the app](PLAN.md#deploy-the-app-git-connected), [§10 Developer setup](PLAN.md#10-developer-setup-databricks-free-edition)).
 
-**Default LLM for Nyaya Dhwani:** **Databricks Llama 4 Maverick** — use `LLM_MODEL=databricks-llama-4-maverick` unless your workspace renames the model id; always treat **Get code** as the source of truth for `base_url` and model string.
+**Default LLM for Nyaya Dhwani:** **Databricks GPT-5.4-mini** — use `LLM_MODEL=databricks-gpt-5-4-mini` unless your workspace renames the model id; always treat **Get code** as the source of truth for `base_url` and model string.
 
 You confirmed **§8 Step 2a** works when a workspace model answers in **Playground** with context + question — the same pattern as RAG **generation** after `CorpusIndex.search`. Other models (e.g. Gemma 3 12B) are fine for smoke tests; **Maverick** is what we standardize on for the shipped app.
 
@@ -10,7 +10,7 @@ You confirmed **§8 Step 2a** works when a workspace model answers in **Playgrou
 
 ## 1. Get a programmatic snippet
 
-1. In **Playground**, select **Databricks Llama 4 Maverick** (or the model you will use in production).
+1. In **Playground**, select **Databricks GPT-5.4-mini** (or the model you will use in production).
 2. Click **Get code** (next to the model / Tools).
 3. Copy the sample — it usually uses the **OpenAI-compatible** client against a **Databricks** base URL (**AI Gateway** often ends with `…/mlflow/v1`) and a **token** (`DATABRICKS_TOKEN` / personal access token / OAuth, depending on the snippet).
 
@@ -33,7 +33,7 @@ For [`src/nyaya_dhwani/llm_client.py`](../src/nyaya_dhwani/llm_client.py) (OpenA
 |-----|---------|
 | `LLM_CHAT_COMPLETIONS_URL` | **Full** URL to `POST` (if your snippet uses a single URL). **Or** omit and set `LLM_OPENAI_BASE_URL` instead. |
 | `LLM_OPENAI_BASE_URL` | Base URL only; we append `/chat/completions` when the base ends with `/v1` (including **AI Gateway** `…/mlflow/v1` from **Get code**). |
-| `LLM_MODEL` | **Recommended:** `databricks-llama-4-maverick` — must match Playground / Get code. |
+| `LLM_MODEL` | **Recommended:** `databricks-gpt-5-4-mini` — must match Playground / Get code. |
 | `DATABRICKS_TOKEN` or `LLM_API_KEY` | Bearer token for the request (from Secrets in Jobs/Apps). **Never commit.** |
 
 Your **Get code** output may name variables differently — align them to the above or pass arguments explicitly in code.
@@ -50,7 +50,7 @@ client = OpenAI(
     base_url="https://<workspace-id>.ai-gateway.cloud.databricks.com/mlflow/v1",
 )
 response = client.chat.completions.create(
-    model="databricks-llama-4-maverick",
+    model="databricks-gpt-5-4-mini",
     messages=[{"role": "user", "content": "..."}],
     max_tokens=5000,
 )

@@ -5,7 +5,7 @@ Typical env (from Playground **Get code** — do not commit secrets).
 **AI Gateway** (OpenAI SDK ``base_url`` often ends with ``/mlflow/v1``)::
 
     LLM_OPENAI_BASE_URL=https://<workspace-id>.ai-gateway.cloud.databricks.com/mlflow/v1
-    LLM_MODEL=databricks-llama-4-maverick
+    LLM_MODEL=databricks-gpt-5-4-mini
     DATABRICKS_TOKEN=dapi...
 
 We POST to ``{LLM_OPENAI_BASE_URL}/chat/completions`` (same as the OpenAI client).

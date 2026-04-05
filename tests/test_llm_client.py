@@ -92,7 +92,7 @@ def test_complete_with_openai_sdk_fake_module():
             {
                 "LLM_OPENAI_BASE_URL": "https://w.ai-gateway.cloud.databricks.com/mlflow/v1",
                 "DATABRICKS_TOKEN": "dapi-test",
-                "LLM_MODEL": "databricks-llama-4-maverick",
+                "LLM_MODEL": "databricks-gpt-5-4-mini",
             },
             clear=False,
         ):
@@ -105,7 +105,7 @@ def test_complete_with_openai_sdk_fake_module():
             "dapi-test",
             "https://w.ai-gateway.cloud.databricks.com/mlflow/v1",
         )
-        assert calls["create"][0] == "databricks-llama-4-maverick"
+        assert calls["create"][0] == "databricks-gpt-5-4-mini"
         assert calls["create"][3] == 100
     finally:
         del sys.modules["openai"]

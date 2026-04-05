@@ -2,7 +2,7 @@
 
 **Multilingual legal information assistant for Indian law** — ask questions about the Bharatiya Nyaya Sanhita (BNS), Indian Penal Code (IPC), and their mappings in 13 languages.
 
-Built on **Databricks Free Edition** with **FAISS RAG**, **Llama Maverick** (AI Gateway), and **Sarvam AI** (translation, speech-to-text, text-to-speech). Deployed as a **Databricks App** via Streamlit.
+Built on **Databricks Free Edition** with **FAISS RAG**, **GPT-5.4-mini** (AI Gateway), and **Sarvam AI** (translation, speech-to-text, text-to-speech). Deployed as a **Databricks App** via Streamlit.
 
 > **Not legal advice.** General information only — consult a qualified lawyer for your specific situation.
 
@@ -12,7 +12,7 @@ Built on **Databricks Free Edition** with **FAISS RAG**, **Llama Maverick** (AI 
 Question (any of 13 languages)
   → Sarvam Mayura translates to English
   → FAISS semantic search (900+ legal text chunks)
-  → Databricks Llama Maverick generates answer with citations
+  → Databricks GPT-5.4-mini generates answer with citations
   → Sarvam Mayura translates back to selected language
   → Bilingual response (selected language + English) + sources
 ```
@@ -98,7 +98,7 @@ pytest tests/ -v
 
 | Component | Technology |
 |-----------|-----------|
-| LLM | Databricks Llama 4 Maverick (AI Gateway) |
+| LLM | Databricks GPT-5.4-mini (AI Gateway) |
 | Embeddings | `sentence-transformers/all-MiniLM-L6-v2` |
 | Vector search | FAISS (IndexFlatIP, cosine similarity) |
 | Translation | Sarvam Mayura |

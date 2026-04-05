@@ -105,7 +105,15 @@ class TriageService:
             )
 
         retriever = self._ensure_retriever()
-        chunks_df = retriever.search(retrieval_query, k=self._top_k)
+        try:
+            chunks_df = retriever.search(retrieval_query, k=self._top_k)
+        except Exception:
+            logger.exception(
+                "Retrieval failed while accessing search backend (query=%r, top_k=%s)",
+                retrieval_query[:160],
+                self._top_k,
+            )
+            raise
 
         domains, action_plan, enriched_user_msg = build_triage_context(
             query_en,

@@ -36,22 +36,37 @@ class FaissRetriever:
         from nyaya_dhwani.embedder import SentenceEmbedder
 
         logger.info("FaissRetriever: loading index from %s", self._index_dir)
-        self._ci = CorpusIndex.load(self._index_dir)
-        m = self._ci.manifest
-        self._embedder = SentenceEmbedder(
-            model_name=m.embedding_model,
-            normalize=m.normalize_embeddings,
-        )
-        logger.info("FaissRetriever: loaded %d vectors, model %s", m.num_vectors, m.embedding_model)
+        try:
+            self._ci = CorpusIndex.load(self._index_dir)
+            m = self._ci.manifest
+            self._embedder = SentenceEmbedder(
+                model_name=m.embedding_model,
+                normalize=m.normalize_embeddings,
+            )
+            logger.info("FaissRetriever: loaded %d vectors, model %s", m.num_vectors, m.embedding_model)
+        except Exception:
+            logger.exception(
+                "FaissRetriever: failed to load index or embeddings from %s. "
+                "Check volume/file permissions and index artifacts.",
+                self._index_dir,
+            )
+            raise
 
     def search(self, query: str, k: int = 7) -> pd.DataFrame:
-        self._load()
-        assert self._ci is not None and self._embedder is not None
-        emb = self._embedder.encode([query.strip()])
-        semantic_df = self._ci.search(emb, k=k)
+        try:
+            self._load()
+            assert self._ci is not None and self._embedder is not None
+            emb = self._embedder.encode([query.strip()])
+            semantic_df = self._ci.search(emb, k=k)
 
-        from nyaya_dhwani.keyword_boost import boost_with_keywords
-        return boost_with_keywords(query, semantic_df, self._ci.chunks, k=k)
+            from nyaya_dhwani.keyword_boost import boost_with_keywords
+
+            return boost_with_keywords(query, semantic_df, self._ci.chunks, k=k)
+        except Exception:
+            logger.exception(
+                "FaissRetriever.search failed (k=%s, query=%r).", k, (query or "")[:120]
+            )
+            raise
 
 
 class FallbackRetriever:
@@ -84,19 +99,27 @@ def _download_from_volume(volume_path: str, local_dir: str) -> str:
     logger.info("Downloading index from Volume %s -> %s", volume_path, local)
     from databricks.sdk import WorkspaceClient  # type: ignore[import-not-found]
 
-    w = WorkspaceClient()
-    local.mkdir(parents=True, exist_ok=True)
-    for item in w.files.list_directory_contents(volume_path):
-        if item.is_directory:
-            continue
-        dest = local / item.name
-        logger.info("  downloading %s", item.name)
-        with w.files.download(item.path).contents as src, open(dest, "wb") as dst:
-            while True:
-                chunk = src.read(8 * 1024 * 1024)
-                if not chunk:
-                    break
-                dst.write(chunk)
+    try:
+        w = WorkspaceClient()
+        local.mkdir(parents=True, exist_ok=True)
+        for item in w.files.list_directory_contents(volume_path):
+            if item.is_directory:
+                continue
+            dest = local / item.name
+            logger.info("  downloading %s", item.name)
+            with w.files.download(item.path).contents as src, open(dest, "wb") as dst:
+                while True:
+                    chunk = src.read(8 * 1024 * 1024)
+                    if not chunk:
+                        break
+                    dst.write(chunk)
+    except Exception:
+        logger.exception(
+            "Failed to access/download index from UC Volume %s. "
+            "Check READ permissions and volume path.",
+            volume_path,
+        )
+        raise
     logger.info("Index download complete -> %s", local)
     return str(local)
 
@@ -108,8 +131,10 @@ def _resolve_index_dir() -> str:
     if path.startswith("/Volumes/") and not Path(path).exists():
         try:
             path = _download_from_volume(path, _LOCAL_INDEX_CACHE)
-        except Exception as e:
-            logger.warning("Could not download index from Volume: %s", e)
+        except Exception:
+            logger.warning("Could not download index from Volume; continuing with unresolved path", exc_info=True)
+    if not Path(path).exists():
+        logger.warning("Resolved index path does not exist: %s", path)
     return path
 
 
