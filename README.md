@@ -99,17 +99,7 @@ My phone was stolen on the street yesterday. I have CCTV footage. What should I 
 | [tests/](tests/) | pytest suite |
 | [docs/](docs/) | Documentation |
 
-## Documentation
 
-| Document | Audience | What it covers |
-|----------|----------|----------------|
-| [docs/APP_USER_GUIDE.md](docs/APP_USER_GUIDE.md) | End users | Using the app, languages, voice features |
-| [docs/DEVELOPER_GUIDE.md](docs/DEVELOPER_GUIDE.md) | Developers | Deploying app, secrets, Databricks Apps setup |
-| [docs/UI_design.md](docs/UI_design.md) | Designers/devs | UI/UX spec and Sarvam pipeline design |
-| [docs/PLAYGROUND_TO_APP.md](docs/PLAYGROUND_TO_APP.md) | Developers | Playground Get code mapping to env vars |
-| [docs/WORKSPACE_SETUP.md](docs/WORKSPACE_SETUP.md) | Admins | Secret scopes, GitHub Repos, key rotation |
-| [docs/BENCHMARK_EVALUATION.md](docs/BENCHMARK_EVALUATION.md) | Developers | RAG evaluation with BhashaBench-Legal |
-| [docs/PLAN.md](docs/PLAN.md) | Team | Product plan and architecture decisions |
 
 ## Testing
 
