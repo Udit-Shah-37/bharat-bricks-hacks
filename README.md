@@ -1,4 +1,4 @@
-# Nyaya-Saathi (Nyaya-Dhwani)
+# Nyaya-Saathi
 
 Nyaya-Saathi is a multilingual legal first-response assistant for Indian citizens. It uses Databricks-hosted LLM and retrieval infrastructure to convert a user situation into grounded legal guidance, practical next steps, and cited references.
 
