@@ -210,7 +210,7 @@ def build_reply_markdown(assistant_en: str, cites: str, lang: str) -> str:
 
     if lang == "en" or not sarvam_configured():
         return (
-            f"{assistant_en}\n\n---\n{sources_block}"
+            f"{assistant_en}"
             f"\n\n---\n*{DISCLAIMER_EN}*"
         )
 
@@ -221,7 +221,6 @@ def build_reply_markdown(assistant_en: str, cites: str, lang: str) -> str:
     lang_label = dict(SARVAM_LANGUAGES).get(lang, lang)
     return (
         f"**{lang_label}:**\n\n{body_translated}\n\n"
-        # f"---\n{sources_block}"
         f"\n\n---\n*{disc_translated}*"
     )
 
