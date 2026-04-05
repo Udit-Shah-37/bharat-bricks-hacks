@@ -83,7 +83,7 @@ spark.createDataFrame(criminal_hi.to_pandas()).write.mode("overwrite").saveAsTab
 The notebook's Phase 2 (MCQ evaluation) runs BBL questions through the same RAG pipeline as the app:
 1. Retrieve context via Vector Search (same as app)
 2. Format MCQ prompt with RAG context
-3. Call Llama Maverick
+3. Call GPT-5.4-mini
 4. Score against `correct_answer`
 
 **Columns:** `question`, `option_a`–`option_d`, `correct_answer`, `question_type`, `question_level`, `topic`, `subdomain`.
@@ -177,7 +177,7 @@ The benchmark notebook needs the same access as the app. Here's what's required:
 |----------|---------------|-------|
 | **Vector Search** | `WorkspaceClient().vector_search_indexes.query_index()` | Endpoint `nyaya_vs_endpoint` must be ONLINE. User running notebook needs CAN_QUERY. |
 | **FAISS index** | `CorpusIndex.load("/Volumes/main/india_legal/legal_files/nyaya_index")` | UC Volume path accessible from notebook cluster (FUSE-mounted). |
-| **LLM (Llama Maverick)** | `nyaya_dhwani.llm_client.chat_completions()` | Set `LLM_OPENAI_BASE_URL`, `LLM_MODEL`, `DATABRICKS_TOKEN` as env vars in the notebook. Use Playground → Get code. |
+| **LLM (GPT-5.4-mini)** | `nyaya_dhwani.llm_client.chat_completions()` | Set `LLM_OPENAI_BASE_URL`, `LLM_MODEL`, `DATABRICKS_TOKEN` as env vars in the notebook. Use Playground → Get code. |
 | **Sarvam API** | `nyaya_dhwani.sarvam_client.translate_text()` | Load `SARVAM_API_KEY` from secret scope: `os.environ["SARVAM_API_KEY"] = dbutils.secrets.get("nyaya-dhwani", "sarvam_api_key")` |
 | **Benchmark questions** | `json.load(open("tests/benchmark_questions.json"))` | Repo must be cloned in Databricks Repos. Set `REPO_ROOT` to the Repos path. |
 | **HuggingFace (BBL)** | `datasets.load_dataset(..., token=HF_TOKEN)` | Store token: `databricks secrets put-secret nyaya-dhwani hf_token`. Request access at the BBL dataset page first (see above). |
@@ -193,7 +193,7 @@ sys.path.insert(0, f"{REPO_ROOT}/src")
 
 # LLM config (from Playground → Get code)
 os.environ["LLM_OPENAI_BASE_URL"] = "https://7474650313055161.ai-gateway.cloud.databricks.com/mlflow/v1"
-os.environ["LLM_MODEL"] = "databricks-llama-4-maverick"
+os.environ["LLM_MODEL"] = "databricks-gpt-5-4-mini"
 os.environ["DATABRICKS_TOKEN"] = dbutils.secrets.get("nyaya-dhwani", "databricks_token")  # or use a PAT
 
 # Sarvam (for multilingual eval)

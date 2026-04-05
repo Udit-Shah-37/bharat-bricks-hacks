@@ -30,14 +30,24 @@ class VectorSearchRetriever:
         """Return the vector_search_indexes API client (not the index object)."""
         if self._index is not None:
             return self._index
-        from databricks.sdk import WorkspaceClient  # type: ignore[import-not-found]
-        self._index = WorkspaceClient().vector_search_indexes
-        logger.info(
-            "VectorSearchRetriever: connected to endpoint %s, index %s",
-            self._endpoint_name,
-            self._index_name,
-        )
-        return self._index
+        try:
+            from databricks.sdk import WorkspaceClient  # type: ignore[import-not-found]
+
+            self._index = WorkspaceClient().vector_search_indexes
+            logger.info(
+                "VectorSearchRetriever: connected to endpoint %s, index %s",
+                self._endpoint_name,
+                self._index_name,
+            )
+            return self._index
+        except Exception:
+            logger.exception(
+                "VectorSearchRetriever: failed to initialize client for endpoint=%s index=%s. "
+                "Check credentials and CAN_QUERY permissions.",
+                self._endpoint_name,
+                self._index_name,
+            )
+            raise
 
     def search(self, query: str, k: int = 7) -> pd.DataFrame:
         """Similarity search with optional metadata filters for section references."""
@@ -60,7 +70,12 @@ class VectorSearchRetriever:
                     )
                     mapping_rows = _response_to_rows(mapping_resp)
                 except Exception:
-                    logger.debug("Filtered VS search failed, continuing with unfiltered", exc_info=True)
+                    logger.warning(
+                        "Filtered VS query failed for endpoint=%s index=%s; continuing unfiltered",
+                        self._endpoint_name,
+                        self._index_name,
+                        exc_info=True,
+                    )
 
             resp = client.query_index(
                 index_name=index_name,
@@ -87,8 +102,14 @@ class VectorSearchRetriever:
                 return pd.DataFrame(columns=_RESULT_COLUMNS + ["score", "rank"])
             return pd.DataFrame(combined)
 
-        except Exception as e:
-            logger.warning("VectorSearchRetriever.search failed: %s", e)
+        except Exception:
+            logger.warning(
+                "VectorSearchRetriever.search failed for endpoint=%s index=%s query=%r",
+                self._endpoint_name,
+                self._index_name,
+                (query or "")[:120],
+                exc_info=True,
+            )
             return pd.DataFrame(columns=_RESULT_COLUMNS + ["score", "rank"])
 
 

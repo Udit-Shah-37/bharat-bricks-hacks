@@ -5,7 +5,7 @@ Typical env (from Playground **Get code** — do not commit secrets).
 **AI Gateway** (OpenAI SDK ``base_url`` often ends with ``/mlflow/v1``)::
 
     LLM_OPENAI_BASE_URL=https://<workspace-id>.ai-gateway.cloud.databricks.com/mlflow/v1
-    LLM_MODEL=databricks-llama-4-maverick
+    LLM_MODEL=databricks-gpt-5-4-mini
     DATABRICKS_TOKEN=dapi...
 
 We POST to ``{LLM_OPENAI_BASE_URL}/chat/completions`` (same as the OpenAI client).
@@ -24,6 +24,48 @@ import requests
 logger = logging.getLogger(__name__)
 
 DEFAULT_TIMEOUT = 120
+
+
+def _content_to_text(content: Any) -> str:
+    """Normalize assistant content payloads into plain text.
+
+    Some OpenAI-compatible backends return ``message.content`` as a list of
+    typed content blocks instead of a single string.
+    """
+    if content is None:
+        return ""
+    if isinstance(content, str):
+        return content.strip()
+    if isinstance(content, list):
+        parts: list[str] = []
+        for item in content:
+            if isinstance(item, str):
+                text = item.strip()
+                if text:
+                    parts.append(text)
+                continue
+            if isinstance(item, dict):
+                # Common shapes: {"type": "text", "text": "..."}
+                # and nested variants like {"type":"output_text","text":{"value":"..."}}
+                text_val = item.get("text")
+                if isinstance(text_val, str):
+                    text = text_val.strip()
+                    if text:
+                        parts.append(text)
+                    continue
+                if isinstance(text_val, dict):
+                    nested = str(text_val.get("value", "")).strip()
+                    if nested:
+                        parts.append(nested)
+                    continue
+                nested_content = item.get("content")
+                if isinstance(nested_content, str):
+                    text = nested_content.strip()
+                    if text:
+                        parts.append(text)
+                    continue
+        return "\n".join(parts).strip()
+    return str(content).strip()
 
 
 def _chat_url() -> str:
@@ -130,7 +172,11 @@ def chat_completions(
 
 def extract_assistant_text(response: dict[str, Any]) -> str:
     try:
-        return response["choices"][0]["message"]["content"].strip()
+        content = response["choices"][0]["message"]["content"]
+        text = _content_to_text(content)
+        if text:
+            return text
+        raise ValueError("Assistant response content was empty")
     except (KeyError, IndexError, TypeError) as e:
         raise ValueError(f"Unexpected LLM response shape: {response!r}") from e
 
@@ -176,4 +222,4 @@ def complete_with_openai_sdk(
         temperature=temperature,
         max_tokens=max_tokens,
     )
-    return (resp.choices[0].message.content or "").strip()
+    return _content_to_text(resp.choices[0].message.content)

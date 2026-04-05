@@ -2,7 +2,7 @@
 
 **Multilingual legal information assistant for Indian law** — ask questions about the Bharatiya Nyaya Sanhita (BNS), Indian Penal Code (IPC), and their mappings in 13 languages.
 
-Built on **Databricks Free Edition** with **FAISS RAG**, **Llama Maverick** (AI Gateway), and **Sarvam AI** (translation, speech-to-text, text-to-speech). Deployed as a **Databricks App** via Gradio.
+Built on **Databricks Free Edition** with **FAISS RAG**, **GPT-5.4-mini** (AI Gateway), and **Sarvam AI** (translation, speech-to-text, text-to-speech). Deployed as a **Databricks App** via Streamlit.
 
 > **Not legal advice.** General information only — consult a qualified lawyer for your specific situation.
 
@@ -12,7 +12,7 @@ Built on **Databricks Free Edition** with **FAISS RAG**, **Llama Maverick** (AI 
 Question (any of 13 languages)
   → Sarvam Mayura translates to English
   → FAISS semantic search (900+ legal text chunks)
-  → Databricks Llama Maverick generates answer with citations
+  → Databricks GPT-5.4-mini generates answer with citations
   → Sarvam Mayura translates back to selected language
   → Bilingual response (selected language + English) + sources
 ```
@@ -26,7 +26,7 @@ Question (any of 13 languages)
 | Document | Audience | What it covers |
 |----------|----------|----------------|
 | **[App User Guide](docs/APP_USER_GUIDE.md)** | End users | How to use the app — language selection, asking questions, understanding responses, voice features |
-| **[Developer Guide](docs/DEVELOPER_GUIDE.md)** | Developers | Deploying the app, secrets/auth, Gradio + Databricks Apps pitfalls, translation pipeline, dependency pins |
+| **[Developer Guide](docs/DEVELOPER_GUIDE.md)** | Developers | Deploying the app, secrets/auth, Streamlit + Databricks Apps setup, translation pipeline, dependency pins |
 | [UI Design](docs/UI_design.md) | Designers / developers | UI/UX spec and Sarvam pipeline design |
 | [Playground to App](docs/PLAYGROUND_TO_APP.md) | Developers | Mapping Playground "Get code" to app env vars |
 | [Workspace Setup](docs/WORKSPACE_SETUP.md) | Admins | Databricks secret scopes, GitHub Repos, key rotation |
@@ -79,7 +79,7 @@ python app/main.py
 
 | Path | Purpose |
 |------|---------|
-| [`app/main.py`](app/main.py) | Gradio app (RAG + LLM + Sarvam multilingual) |
+| [`app/main.py`](app/main.py) | Streamlit chat app (RAG + LLM + Sarvam multilingual) |
 | [`app.yaml`](app.yaml) | Databricks Apps entry point + env config |
 | [`src/nyaya_dhwani/`](src/nyaya_dhwani/) | Python package: embedder, retrieval, llm_client, sarvam_client |
 | [`notebooks/`](notebooks/) | Data ingestion + FAISS index build |
@@ -98,11 +98,11 @@ pytest tests/ -v
 
 | Component | Technology |
 |-----------|-----------|
-| LLM | Databricks Llama 4 Maverick (AI Gateway) |
+| LLM | Databricks GPT-5.4-mini (AI Gateway) |
 | Embeddings | `sentence-transformers/all-MiniLM-L6-v2` |
 | Vector search | FAISS (IndexFlatIP, cosine similarity) |
 | Translation | Sarvam Mayura |
 | Speech-to-text | Sarvam Saaras |
 | Text-to-speech | Sarvam Bulbul |
-| App framework | Gradio 4.44 on Databricks Apps |
+| App framework | Streamlit on Databricks Apps |
 | Data platform | Databricks (Unity Catalog, Volumes, Apps) |

@@ -1,1 +1,1 @@
-"""Nyaya Dhwani Gradio app (Databricks Apps)."""
+"""Nyaya Dhwani Streamlit app (Databricks Apps)."""

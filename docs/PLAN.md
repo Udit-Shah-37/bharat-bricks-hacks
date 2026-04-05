@@ -17,7 +17,7 @@ This document is the **canonical plan**; keep it in sync with development.
 | **RAG index** | [`notebooks/build_rag_index.ipynb`](../notebooks/build_rag_index.ipynb) writes FAISS + Parquet + `manifest.json` under `/Volumes/main/india_legal/legal_files/nyaya_index/` |
 | **RAG smoke test** | `CorpusIndex.load` + `search` works in notebook when index + deps are installed |
 | **App UI** | [`app/main.py`](../app/main.py) — Gradio **P0** (welcome, topics, chat); UI spec [UI_design.md](UI_design.md); deploy per [Deploy the app](#deploy-the-app-git-connected) |
-| **Stack (locked)** | **Gradio** · **Databricks Llama 4 Maverick** (`databricks-llama-4-maverick`) via Playground **Get code** / **AI Gateway** env vars ([`llm_client.py`](../src/nyaya_dhwani/llm_client.py)) · **Sarvam** for STT/TTS/translate per [UI_design.md](UI_design.md) · **FAISS on UC Volume** for retrieval until Vector Search |
+| **Stack (locked)** | **Gradio** · **Databricks GPT-5.4-mini** (`databricks-gpt-5-4-mini`) via Playground **Get code** / **AI Gateway** env vars ([`llm_client.py`](../src/nyaya_dhwani/llm_client.py)) · **Sarvam** for STT/TTS/translate per [UI_design.md](UI_design.md) · **FAISS on UC Volume** for retrieval until Vector Search |
 | **LLM** | [`llm_client.py`](../src/nyaya_dhwani/llm_client.py) — OpenAI-compatible chat; default model id **Maverick** — see [PLAYGROUND_TO_APP.md](PLAYGROUND_TO_APP.md) |
 | **MLflow** | Optional tracing — not required for MVP (see §8 Step 1) |
 
@@ -25,7 +25,7 @@ This document is the **canonical plan**; keep it in sync with development.
 
 ## Recommended default (hackathon MVP)
 
-**Target runtime:** a **[Databricks App](https://docs.databricks.com/en/dev-tools/databricks-apps/index.html)** built with **Gradio** (Python) in the same workspace as the data. **Generation** uses **Databricks Llama 4 Maverick** via **AI Gateway** / Playground **Get code** (same env vars as [`llm_client`](../src/nyaya_dhwani/llm_client.py)). Use **Unity Catalog / Volumes**, **Databricks Secrets** for Sarvam + LLM keys, and **shared `src/nyaya_dhwani`** importable from the App and from notebooks. **UI** follows [UI_design.md](UI_design.md) (screens, Sarvam pipeline, disclaimers).
+**Target runtime:** a **[Databricks App](https://docs.databricks.com/en/dev-tools/databricks-apps/index.html)** built with **Gradio** (Python) in the same workspace as the data. **Generation** uses **Databricks GPT-5.4-mini** via **AI Gateway** / Playground **Get code** (same env vars as [`llm_client`](../src/nyaya_dhwani/llm_client.py)). Use **Unity Catalog / Volumes**, **Databricks Secrets** for Sarvam + LLM keys, and **shared `src/nyaya_dhwani`** importable from the App and from notebooks. **UI** follows [UI_design.md](UI_design.md) (screens, Sarvam pipeline, disclaimers).
 
 **Why not vector search on a cluster per query?** On Free Edition, long-lived Spark clusters for interactive FAISS/Chroma are costly. Prefer: **offline index build** (notebook or job) → **persist** FAISS/Chroma + manifest to a **UC Volume** → **load in memory** in the App container at startup.
 
@@ -72,7 +72,7 @@ Use the workspace wizard to deploy this repo as a [Databricks App](https://docs.
    - **Start command** — declared in repo-root [`app.yaml`](../app.yaml) as `python app/main.py` (Databricks default without `app.yaml` is `python app.py`, which does not exist in this repo).
    - **Dependencies** — repo-root [`requirements.txt`](../requirements.txt) pins the stack via `pip install -e ".[rag,rag_embed,app]"` (`faiss-cpu` 1.7.x, `numpy<2`, `sentence-transformers`, `gradio`, etc.).
    - **Working directory** — usually repo root so `src/nyaya_dhwani` is importable; set explicitly if your layout differs.
-   - **Environment variables / secrets** — no keys in git. Map the same variables as [PLAYGROUND_TO_APP.md](PLAYGROUND_TO_APP.md): `DATABRICKS_TOKEN` (or `LLM_API_KEY`), `LLM_OPENAI_BASE_URL`, `LLM_MODEL=databricks-llama-4-maverick`, `SARVAM_API_KEY` (from scope `nyaya-dhwani` / `sarvam_api_key` or direct App env). Optionally `NYAYA_INDEX_DIR` if the app reads index path from env (default: notebook output path below).
+   - **Environment variables / secrets** — no keys in git. Map the same variables as [PLAYGROUND_TO_APP.md](PLAYGROUND_TO_APP.md): `DATABRICKS_TOKEN` (or `LLM_API_KEY`), `LLM_OPENAI_BASE_URL`, `LLM_MODEL=databricks-gpt-5-4-mini`, `SARVAM_API_KEY` (from scope `nyaya-dhwani` / `sarvam_api_key` or direct App env). Optionally `NYAYA_INDEX_DIR` if the app reads index path from env (default: notebook output path below).
    - **Unity Catalog** — grant the App’s service principal (or identity) **read** on the Volume folder containing the index, e.g. `/Volumes/main/india_legal/legal_files/nyaya_index/`.
 
 **Prerequisites before deploy:** §8 Step **0** (ingest + `build_rag_index`) complete; Step **2** (LLM **Get code** with Maverick) works in a notebook; Step **4** (Apps) available; secrets populated.
@@ -100,7 +100,7 @@ The notebook already materializes **`main.india_legal.legal_rag_corpus`** with c
 1. **Sarvam (inbound)** — STT + translate to English per [Sarvam docs](https://docs.sarvam.ai) and the pipeline in [UI_design.md](UI_design.md) (`saaras-v2`, `mayura` as needed); output `query_en`.
 2. **Embed** `query_en` with the **same** model as ingestion (`SentenceEmbedder` / notebook).
 3. **Retrieve** — `CorpusIndex.search` over FAISS built from Volume path (default index dir: `/Volumes/main/india_legal/legal_files/nyaya_index/`); top-k + optional MMR / score floor.
-4. **LLM** — **Databricks Llama 4 Maverick** via `llm_client.chat_completions`: system + user messages include retrieved chunk text, citation hints, and a **not legal advice** disclaimer ([UI_design.md](UI_design.md) mandatory disclaimers). Keys via Secrets / env per [PLAYGROUND_TO_APP.md](PLAYGROUND_TO_APP.md).
+4. **LLM** — **Databricks GPT-5.4-mini** via `llm_client.chat_completions`: system + user messages include retrieved chunk text, citation hints, and a **not legal advice** disclaimer ([UI_design.md](UI_design.md) mandatory disclaimers). Keys via Secrets / env per [PLAYGROUND_TO_APP.md](PLAYGROUND_TO_APP.md).
 5. **Sarvam (outbound)** — translate answer to user language if needed (`mayura`); **TTS** (`bulbul-v1`) for audio; return Markdown text + optional audio bytes to Gradio.
 
 ### App runtime (Gradio + Volume)
@@ -170,7 +170,7 @@ Full spec has six screens. Implement in priority order:
 ## 7. Technical choices
 
 - **FAISS vs Chroma:** FAISS is lean; Chroma helps metadata filters (`source`, `doc_type`).
-- **LLM:** **Databricks Llama 4 Maverick** (`databricks-llama-4-maverick`) as default; abstract behind `llm_client` for provider swaps if Playground model ids change.
+- **LLM:** **Databricks GPT-5.4-mini** (`databricks-gpt-5-4-mini`) as default; abstract behind `llm_client` for provider swaps if Playground model ids change.
 - **UI:** **Gradio** only for the shipped app; FastAPI is optional for a future thin API.
 
 ---
@@ -210,7 +210,7 @@ Product names change; use whatever your workspace lists under **AI/ML**, **Servi
 | 2a | Open **Playground** or **Chat** against a **Databricks-managed** or **external** model | You get one completion without writing an App |
 | 2b | In a notebook, run the **smallest documented example** for workspace LLM access (often via `databricks-*` SDK or REST). *Do not commit API output.* | One programmatic completion works |
 
-**Default for this repo:** Select **Databricks Llama 4 Maverick** in Playground, then **Get code** — same pattern as post-retrieval generation. Other models (e.g. Gemma 3 12B, Llama 3.1 8B Instruct) also work for smoke tests. Use **Get code** → notebook → env vars per [PLAYGROUND_TO_APP.md](PLAYGROUND_TO_APP.md) (`LLM_MODEL=databricks-llama-4-maverick`).
+**Default for this repo:** Select **Databricks GPT-5.4-mini** in Playground, then **Get code** — same pattern as post-retrieval generation. Other models (e.g. Gemma 3 12B, Llama 3.1 8B Instruct) also work for smoke tests. Use **Get code** → notebook → env vars per [PLAYGROUND_TO_APP.md](PLAYGROUND_TO_APP.md) (`LLM_MODEL=databricks-gpt-5-4-mini`).
 
 **Report back:** endpoint type (OpenAI-compatible URL, AI Gateway `…/mlflow/v1`, etc.).
 
@@ -292,7 +292,7 @@ Use this checklist to install and run the app from this repo in a **Free Edition
 1. **Auth** — [README.md](../README.md): Databricks CLI, profile (e.g. `free-aws`), `export DATABRICKS_CONFIG_PROFILE=...` as needed.
 2. **One-time integration** — [WORKSPACE_SETUP.md](WORKSPACE_SETUP.md): add the repo under **Repos**, secret scope `nyaya-dhwani` (`sarvam_api_key`, etc.).
 3. **Data + index** — Run [`india_legal_policy_ingest.ipynb`](../notebooks/india_legal_policy_ingest.ipynb) and [`build_rag_index.ipynb`](../notebooks/build_rag_index.ipynb); confirm `/Volumes/main/india_legal/legal_files/nyaya_index/` contains `corpus.faiss`, `chunks.parquet`, `manifest.json`.
-4. **LLM env** — In Playground, select **Llama 4 Maverick**, **Get code**, map to `LLM_OPENAI_BASE_URL`, `LLM_MODEL`, `DATABRICKS_TOKEN` per [PLAYGROUND_TO_APP.md](PLAYGROUND_TO_APP.md).
+4. **LLM env** — In Playground, select **GPT-5.4-mini**, **Get code**, map to `LLM_OPENAI_BASE_URL`, `LLM_MODEL`, `DATABRICKS_TOKEN` per [PLAYGROUND_TO_APP.md](PLAYGROUND_TO_APP.md).
 5. **Deploy** — **Compute → Apps → Create** → name → **Git repository** → configure start command, env, Volume **read** for the app identity ([Deploy the app](#deploy-the-app-git-connected)).
 6. **Verify** — Open the App URL; check logs for import errors, missing `SARVAM_API_KEY`, or permission denied on the Volume.
 

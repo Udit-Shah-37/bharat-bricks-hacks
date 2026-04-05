@@ -137,7 +137,8 @@ def format_strength_context(assessment: StrengthAssessment) -> str:
     tips_str = "\n".join(f"  - {t}" for t in assessment.evidence_tips)
     return (
         f"\n=== CASE STRENGTH ASSESSMENT ===\n"
-        f"Assessment not available. Use your own judgement and decide whether the assessment is 'strong', 'moderate', or 'needs_more_evidence'."
+        f"Assessment level not available. Use your own judgement and decide whether the assessment is 'strong', 'moderate', or 'needs_more_evidence'."
+        f"Give reason for it and tips to strengthen the case as well"
     )
 
 

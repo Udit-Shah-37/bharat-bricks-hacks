@@ -20,6 +20,24 @@ def test_extract_assistant_text():
     assert out == "hello"
 
 
+def test_extract_assistant_text_content_list_blocks():
+    out = extract_assistant_text(
+        {
+            "choices": [
+                {
+                    "message": {
+                        "content": [
+                            {"type": "text", "text": " first line "},
+                            {"type": "text", "text": "second line"},
+                        ]
+                    }
+                }
+            ]
+        }
+    )
+    assert out == "first line\nsecond line"
+
+
 def test_rag_user_message():
     msg = rag_user_message(["a", "b"], "q?")
     assert "a" in msg and "b" in msg and "q?" in msg
@@ -92,7 +110,7 @@ def test_complete_with_openai_sdk_fake_module():
             {
                 "LLM_OPENAI_BASE_URL": "https://w.ai-gateway.cloud.databricks.com/mlflow/v1",
                 "DATABRICKS_TOKEN": "dapi-test",
-                "LLM_MODEL": "databricks-llama-4-maverick",
+                "LLM_MODEL": "databricks-gpt-5-4-mini",
             },
             clear=False,
         ):
@@ -105,8 +123,57 @@ def test_complete_with_openai_sdk_fake_module():
             "dapi-test",
             "https://w.ai-gateway.cloud.databricks.com/mlflow/v1",
         )
-        assert calls["create"][0] == "databricks-llama-4-maverick"
+        assert calls["create"][0] == "databricks-gpt-5-4-mini"
         assert calls["create"][3] == 100
+    finally:
+        del sys.modules["openai"]
+        if saved is not None:
+            sys.modules["openai"] = saved
+
+
+def test_complete_with_openai_sdk_list_content_blocks():
+    saved = sys.modules.pop("openai", None)
+
+    class FakeOpenAI:
+        def __init__(self, *, api_key, base_url):
+            self.api_key = api_key
+            self.base_url = base_url
+
+        class chat:
+            class completions:
+                @staticmethod
+                def create(*, model, messages, temperature, max_tokens):
+                    return SimpleNamespace(
+                        choices=[
+                            SimpleNamespace(
+                                message=SimpleNamespace(
+                                    content=[
+                                        {"type": "text", "text": " hello "},
+                                        {"type": "text", "text": "world"},
+                                    ]
+                                )
+                            )
+                        ]
+                    )
+
+    fake = ModuleType("openai")
+    fake.OpenAI = FakeOpenAI
+    sys.modules["openai"] = fake
+    try:
+        with patch.dict(
+            os.environ,
+            {
+                "LLM_OPENAI_BASE_URL": "https://w.ai-gateway.cloud.databricks.com/mlflow/v1",
+                "DATABRICKS_TOKEN": "dapi-test",
+                "LLM_MODEL": "databricks-gpt-5-4-mini",
+            },
+            clear=False,
+        ):
+            out = complete_with_openai_sdk(
+                [{"role": "user", "content": "hi"}],
+                max_tokens=100,
+            )
+        assert out == "hello\nworld"
     finally:
         del sys.modules["openai"]
         if saved is not None:
