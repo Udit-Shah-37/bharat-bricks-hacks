@@ -106,8 +106,7 @@ UI_TO_BCP47: dict[str, str] = {
 }
 
 DISCLAIMER_EN = (
-    "This information is for general awareness only and does not constitute legal advice. "
-    "Consult a qualified lawyer for your specific situation."
+    "This is general legal information, not a substitute for advice from a qualified lawyer."
 )
 
 SYSTEM_PROMPT = TRIAGE_SYSTEM_PROMPT
@@ -223,7 +222,7 @@ def resolve_user_message(
 
 def build_reply_markdown(assistant_en: str, cites: str, lang: str) -> str:
     """Build response with both English and translated text side by side."""
-    sources_block = f"**Sources (retrieval)**\n{cites}"
+    sources_block = f"**References used**\n{cites}"
 
     if lang == "en" or not sarvam_configured():
         return (

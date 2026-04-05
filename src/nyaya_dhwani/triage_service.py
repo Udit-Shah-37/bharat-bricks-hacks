@@ -117,7 +117,7 @@ class TriageService:
             {"role": "system", "content": self._system_prompt},
             {"role": "user", "content": enriched_user_msg},
         ]
-        raw = chat_completions(messages, max_tokens=3072, temperature=0.2)
+        raw = chat_completions(messages, max_tokens=3072, temperature=0.3)
         assistant_en = extract_assistant_text(raw)
         assistant_en = post_process_response(assistant_en, action_plan)
 
