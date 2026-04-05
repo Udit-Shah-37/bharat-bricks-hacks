@@ -385,21 +385,142 @@ def build_app() -> gr.Blocks:
         return summary_md, recent
 
     custom_css = """
-    /* Light theme */
-    .gradio-container { background-color: #F7F3ED !important; }
-    footer { font-size: 0.85rem; color: #2A5297; }
-    h1 { color: #0D1B3E; font-family: Georgia, serif; }
+    @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&family=Playfair+Display:wght@600;700&display=swap');
 
-    /* Dark theme: respect browser/OS preference */
-    @media (prefers-color-scheme: dark) {
-        .gradio-container { background-color: #1a1a2e !important; }
-        h1 { color: #e0d8cc; }
-        footer { color: #8ea4c8; }
+    :root {
+        --bg: #f5efe6;
+        --paper: #fffaf3;
+        --ink: #1f2a37;
+        --muted: #5b6470;
+        --brand: #b45309;
+        --brand-strong: #92400e;
+        --border: #eadfce;
+        --chat-user: #fff6e8;
+        --chat-assistant: #ffffff;
+        --shadow: 0 8px 28px rgba(48, 37, 21, 0.08);
     }
-    /* Also handle Gradio's own dark class */
-    .dark .gradio-container { background-color: #1a1a2e !important; }
-    .dark h1 { color: #e0d8cc; }
-    .dark footer { color: #8ea4c8; }
+
+    .gradio-container {
+        font-family: 'Manrope', 'Segoe UI', sans-serif !important;
+        background:
+            radial-gradient(1000px 500px at 10% -10%, #f6d9b8 0%, transparent 45%),
+            radial-gradient(900px 450px at 100% 0%, #f0d8c2 0%, transparent 40%),
+            var(--bg) !important;
+        color: var(--ink);
+    }
+
+    .hero-card,
+    .chat-pane,
+    .side-pane,
+    .analytics-card {
+        background: var(--paper);
+        border: 1px solid var(--border);
+        border-radius: 18px;
+        box-shadow: var(--shadow);
+        padding: 16px 18px;
+    }
+
+    .app-shell {
+        gap: 14px;
+        align-items: stretch;
+    }
+
+    .chat-pane {
+        min-height: 74vh;
+    }
+
+    .side-pane {
+        min-height: 74vh;
+    }
+
+    .hero-card h1 {
+        margin: 0;
+        font-family: 'Playfair Display', Georgia, serif;
+        font-weight: 700;
+        letter-spacing: 0.2px;
+        color: #2d1f10;
+    }
+
+    .hero-card p {
+        margin: 8px 0 0;
+        color: var(--muted);
+        font-size: 0.98rem;
+    }
+
+    .section-title {
+        margin: 0 0 8px;
+        font-weight: 700;
+        color: #3b2b17;
+    }
+
+    .compact-hint {
+        color: var(--muted);
+        font-size: 0.92rem;
+        margin-top: 8px;
+    }
+
+    .gr-button-primary {
+        background: linear-gradient(135deg, var(--brand), var(--brand-strong)) !important;
+        border: none !important;
+        color: #fff !important;
+        box-shadow: 0 6px 18px rgba(146, 64, 14, 0.28);
+    }
+
+    .gr-button-secondary {
+        border-color: var(--border) !important;
+    }
+
+    .gr-chatbot {
+        border: 1px solid var(--border) !important;
+        border-radius: 14px !important;
+        background: #fffcf8 !important;
+        min-height: 58vh;
+    }
+
+    .composer-row {
+        margin-top: 10px;
+        gap: 10px;
+        align-items: center;
+    }
+
+    .composer-row .gr-textbox {
+        margin-bottom: 0 !important;
+    }
+
+    .message.user {
+        background: var(--chat-user) !important;
+        border: 1px solid #f4dec0 !important;
+    }
+
+    .message.bot {
+        background: var(--chat-assistant) !important;
+        border: 1px solid #efe2d3 !important;
+    }
+
+    footer {
+        color: #6c7380;
+        font-size: 0.86rem;
+    }
+
+    @media (max-width: 900px) {
+        .hero-card,
+        .chat-pane,
+        .side-pane,
+        .analytics-card {
+            padding: 14px;
+            border-radius: 14px;
+        }
+        .hero-card h1 {
+            font-size: 1.55rem;
+        }
+        .chat-pane,
+        .side-pane {
+            min-height: auto;
+        }
+        .gr-chatbot {
+            min-height: 48vh;
+        }
+    }
     """
 
     with gr.Blocks(
@@ -408,53 +529,53 @@ def build_app() -> gr.Blocks:
         title="Nyaya-Sahayak",
     ) as demo:
         gr.Markdown(
-            "# Nyaya-Sahayak · न्याय सहायक\n"
-            "*Your Legal First-Response Assistant · Powered by Databricks + Sarvam AI*"
+            """
+            <div class='hero-card'>
+              <h1>Nyaya-Sahayak · न्याय सहायक</h1>
+              <p>Your legal first-response assistant powered by Databricks and Sarvam AI.</p>
+            </div>
+            """
         )
 
         lang_state = gr.State("en")
 
-        with gr.Tabs():
-          with gr.Tab("💬 Legal Chat"):
-            with gr.Column(visible=True) as welcome_col:
-                gr.Markdown("### Welcome")
+        with gr.Row(elem_classes=["app-shell"]):
+            with gr.Column(scale=8, elem_classes=["chat-pane"]):
+                gr.Markdown("<h3 class='section-title'>Legal Chat</h3>")
+                current_lang = gr.Markdown("*Session language: English*")
+                chatbot = gr.Chatbot(
+                    label="Nyaya-Sahayak",
+                    bubble_full_width=False,
+                )
+                with gr.Row(elem_classes=["composer-row"]):
+                    msg = gr.Textbox(
+                        placeholder="Ask your legal question in any supported language...",
+                        show_label=False,
+                        lines=2,
+                        container=False,
+                        scale=8,
+                    )
+                    submit = gr.Button("Send", variant="primary", scale=1, min_width=110)
+                    clear_chat = gr.Button("Clear", variant="secondary", scale=1, min_width=96)
+
+            with gr.Column(scale=4, min_width=300, elem_classes=["side-pane"]):
+                gr.Markdown("<h3 class='section-title'>Controls</h3>")
                 lang_radio = gr.Radio(
                     choices=[(c[1], c[0]) for c in SARVAM_LANGUAGES],  # (label, value)
                     value="en",
-                    label="Select your language / अपनी भाषा चुनें",
-                    info="Non-English questions are translated to English for retrieval, "
-                    "then answers are translated back to your language.",
+                    label="Language",
+                    info="Questions are retrieved in English and answers are returned in your selected language.",
                 )
-
-                begin_btn = gr.Button("Begin / शुरू करें", variant="primary")
-                gr.Markdown(
-                    "<small>Not a substitute for legal counsel · General information only · "
-                    "Powered by Sarvam (STT / translate / TTS) when configured</small>"
-                )
-
-            with gr.Column(visible=False) as chat_col:
-                gr.Markdown("### Chat")
-                current_lang = gr.Markdown("*Session language: English*")
-
-                topic = gr.Radio(
+                topic = gr.Dropdown(
                     choices=list(TOPIC_SEEDS.keys()),
-                    label="Common topics",
+                    label="Quick start prompt",
                     value=None,
-                )
-                chatbot = gr.Chatbot(
-                    label="Nyaya-Sahayak",
-                    height=420,
-                    bubble_full_width=False,
-                )
-                msg = gr.Textbox(
-                    placeholder="Type your legal question in any supported language…",
-                    show_label=False,
-                    lines=2,
+                    interactive=True,
                 )
                 audio_in = gr.Audio(
                     sources=["microphone"],
                     type="numpy",
-                    label="Or speak your question",
+                    label="Speak your question",
                 )
                 tts_cb = gr.Checkbox(
                     label="Read answer aloud",
@@ -465,38 +586,36 @@ def build_app() -> gr.Blocks:
                     type="numpy",
                     interactive=False,
                 )
-                submit = gr.Button("Send", variant="primary")
+                gr.Markdown(
+                    "<p class='compact-hint'>General legal information only. For your specific situation, consult a qualified lawyer.</p>"
+                )
 
-          with gr.Tab("📊 Analytics"):
-            gr.Markdown("### Query Analytics Dashboard")
-            gr.Markdown("*View usage statistics, domain distribution, and most cited legal provisions.*")
-            refresh_btn = gr.Button("🔄 Refresh Analytics", variant="secondary")
-            analytics_md = gr.Markdown("**Click 'Refresh Analytics' to load data.**")
-            analytics_table = gr.Dataframe(
-                label="Recent Queries",
-                interactive=False,
-                wrap=True,
-            )
-            refresh_btn.click(
-                _refresh_analytics,
-                inputs=[],
-                outputs=[analytics_md, analytics_table],
-            )
+                with gr.Accordion("Usage analytics", open=False, elem_classes=["analytics-card"]):
+                    refresh_btn = gr.Button("Refresh analytics", variant="secondary")
+                    analytics_md = gr.Markdown("**Click 'Refresh analytics' to load usage data.**")
+                    analytics_table = gr.Dataframe(
+                        label="Recent queries",
+                        interactive=False,
+                        wrap=True,
+                    )
+                refresh_btn.click(
+                    _refresh_analytics,
+                    inputs=[],
+                    outputs=[analytics_md, analytics_table],
+                )
 
-        def on_begin(lang_code: str):
+        def on_lang_change(lang_code: str):
             labels = dict(SARVAM_LANGUAGES)
             label = labels.get(lang_code, lang_code)
             return (
-                gr.update(visible=False),
-                gr.update(visible=True),
                 lang_code,
                 f"*Session language: {label}*",
             )
 
-        begin_btn.click(
-            on_begin,
+        lang_radio.change(
+            on_lang_change,
             inputs=[lang_radio],
-            outputs=[welcome_col, chat_col, lang_state, current_lang],
+            outputs=[lang_state, current_lang],
         )
 
         def fill_topic(choice: str | None):
@@ -514,6 +633,11 @@ def build_app() -> gr.Blocks:
         )
         submit.click(**_run_turn_io)
         msg.submit(**_run_turn_io)
+        clear_chat.click(
+            lambda: ([], None),
+            inputs=[],
+            outputs=[chatbot, tts_out],
+        )
         # Auto-submit when the user stops recording (so they don't need to click Send).
         audio_in.stop_recording(**_run_turn_io)
 
