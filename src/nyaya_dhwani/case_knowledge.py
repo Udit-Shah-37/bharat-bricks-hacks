@@ -138,8 +138,8 @@ def format_strength_context(assessment: StrengthAssessment) -> str:
     return (
         f"\n=== CASE STRENGTH ASSESSMENT ===\n"
         f"Assessment: {level_emoji.get(assessment.level, '🟡')} {level_label.get(assessment.level, 'Moderate')}\n"
-        f"Reason: {assessment.reason}\n"
-        f"Evidence tips to strengthen your case:\n{tips_str}\n"
+        f"Assessment not available. Use your own judgement and decide whether the assessment is 'strong', 'moderate', or 'needs_more_evidence'."
+        f"Give reason and tips to strengthen the case as well"
     )
 
 
