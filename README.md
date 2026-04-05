@@ -1,91 +1,105 @@
 # Nyaya Dhwani
 
-**Multilingual legal information assistant for Indian law** — ask questions about the Bharatiya Nyaya Sanhita (BNS), Indian Penal Code (IPC), and their mappings in 13 languages.
+Multilingual legal information assistant for Indian law. Ask questions about the Bharatiya Nyaya Sanhita (BNS), IPC mappings, and related statutes in 13 languages with citations.
 
-Built on **Databricks Free Edition** with **FAISS RAG**, **GPT-5.4-mini** (AI Gateway), and **Sarvam AI** (translation, speech-to-text, text-to-speech). Deployed as a **Databricks App** via Streamlit.
+Built on Databricks Free Edition with FAISS RAG, GPT-5.4-mini (AI Gateway), and Sarvam AI (translation, speech-to-text, text-to-speech), delivered as a Streamlit Databricks App.
 
-> **Not legal advice.** General information only — consult a qualified lawyer for your specific situation.
+Not legal advice. General information only.
 
-## How it works
+## Architecture diagram
 
+```mermaid
+flowchart LR
+  U["User (text or voice)"] -->|Speech| STT["Sarvam Saaras STT"]
+  U -->|Text| IN["User text"]
+  STT --> IN
+  IN --> T1["Sarvam Mayura translate to English"]
+  T1 --> RET["FAISS semantic search"]
+  RET --> CTX["Top-k legal chunks"]
+  CTX --> LLM["Databricks GPT-5.4-mini"]
+  LLM --> OUT["Answer with citations"]
+  OUT --> T2["Sarvam Mayura translate back"]
+  T2 --> UI["Streamlit UI + sources"]
+  UI -->|Optional| TTS["Sarvam Bulbul TTS"]
 ```
-Question (any of 13 languages)
-  → Sarvam Mayura translates to English
-  → FAISS semantic search (900+ legal text chunks)
-  → Databricks GPT-5.4-mini generates answer with citations
-  → Sarvam Mayura translates back to selected language
-  → Bilingual response (selected language + English) + sources
-```
 
-**Supported languages:** English, Hindi, Bengali, Kannada, Tamil, Telugu, Malayalam, Marathi, Gujarati, Odia, Punjabi, Assamese, Urdu.
+## What it does
 
-**Voice support:** microphone input via Sarvam Saaras STT, answer read aloud via Sarvam Bulbul TTS.
+The app answers legal questions in a chosen Indian language, retrieves relevant BNS/Act text via FAISS RAG, and returns a bilingual response with citations. Voice input/output is supported via Sarvam STT/TTS.
 
-## Documentation
+## Workflow summary
 
-| Document | Audience | What it covers |
-|----------|----------|----------------|
-| **[App User Guide](docs/APP_USER_GUIDE.md)** | End users | How to use the app — language selection, asking questions, understanding responses, voice features |
-| **[Developer Guide](docs/DEVELOPER_GUIDE.md)** | Developers | Deploying the app, secrets/auth, Streamlit + Databricks Apps setup, translation pipeline, dependency pins |
-| [UI Design](docs/UI_design.md) | Designers / developers | UI/UX spec and Sarvam pipeline design |
-| [Playground to App](docs/PLAYGROUND_TO_APP.md) | Developers | Mapping Playground "Get code" to app env vars |
-| [Workspace Setup](docs/WORKSPACE_SETUP.md) | Admins | Databricks secret scopes, GitHub Repos, key rotation |
-| [Benchmark Evaluation](docs/BENCHMARK_EVALUATION.md) | Developers | RAG quality evaluation with BhashaBench-Legal + internal test questions |
-| [Plan](docs/PLAN.md) | Team | Product plan and architecture decisions |
+1. User speaks or types a question in any supported language.
+2. Sarvam Mayura translates the question to English.
+3. FAISS retrieves top-k legal text chunks.
+4. GPT-5.4-mini generates a grounded answer with citations.
+5. Sarvam Mayura translates the answer back to the chosen language.
+6. Streamlit shows bilingual answer plus sources and can read it aloud.
 
-## Quick start
+Supported languages: English, Hindi, Bengali, Kannada, Tamil, Telugu, Malayalam, Marathi, Gujarati, Odia, Punjabi, Assamese, Urdu.
 
-### For users
+## How to run (exact commands)
 
-Open the app URL → select language → ask a question. See [App User Guide](docs/APP_USER_GUIDE.md).
-
-### For developers
+### Databricks (recommended)
 
 ```bash
-# 1. Authenticate
+# 1) Authenticate
 databricks auth login --host https://dbc-6651e87a-25a5.cloud.databricks.com --profile free-aws
 export DATABRICKS_CONFIG_PROFILE=free-aws
 
-# 2. Store secrets
+# 2) Create secret scope and add keys
 databricks secrets create-scope nyaya-dhwani
 databricks secrets put-secret nyaya-dhwani sarvam_api_key
-databricks secrets put-secret nyaya-dhwani hf_token          # HuggingFace (for benchmark dataset)
+databricks secrets put-secret nyaya-dhwani hf_token
 
-# 3. Run notebooks (on a Databricks cluster)
-#    - notebooks/india_legal_policy_ingest.ipynb  (ingest → legal_rag_corpus table)
-#    - notebooks/build_rag_index.ipynb            (FAISS index → UC Volume)
+# 3) Run ingestion and index build notebooks on a Databricks cluster
+#    - notebooks/india_legal_policy_ingest.ipynb
+#    - notebooks/build_rag_index.ipynb
 
-# 4. Deploy the app
-#    Compute → Apps → Create → connect this Git repo → Deploy
+# 4) Deploy the app (Databricks UI)
+#    Compute -> Apps -> Create -> Connect this Git repo -> Deploy
 
-# 5. Grant service principal permissions
+# 5) Grant app service principal permissions
 #    - CAN_QUERY on AI Gateway endpoint
 #    - READ on UC Volume main.india_legal.legal_files
 #    - READ on secret scope nyaya-dhwani
 ```
 
-Full details: [Developer Guide](docs/DEVELOPER_GUIDE.md).
-
 ### Local development
 
 ```bash
 pip install -e ".[dev,rag,rag_embed,app]"
-cp .env.example .env   # fill in values
+cp .env.example .env
 export $(grep -v '^#' .env | xargs)
 python app/main.py
 ```
+
+## Demo steps (clicks and prompts)
+
+1. Open the Streamlit app URL.
+2. Choose a language in the sidebar (e.g., Hindi or Tamil).
+3. Click the microphone icon and speak, or type a prompt.
+4. Example prompt to run:
+
+```text
+My phone was stolen on the street yesterday. I have CCTV footage. What should I do and which law applies?
+```
+
+5. Observe the bilingual answer and citations. Click the speaker icon to hear the response.
 
 ## Repository layout
 
 | Path | Purpose |
 |------|---------|
-| [`app/main.py`](app/main.py) | Streamlit chat app (RAG + LLM + Sarvam multilingual) |
-| [`app.yaml`](app.yaml) | Databricks Apps entry point + env config |
-| [`src/nyaya_dhwani/`](src/nyaya_dhwani/) | Python package: embedder, retrieval, llm_client, sarvam_client |
-| [`notebooks/`](notebooks/) | Data ingestion + FAISS index build |
-| [`requirements.txt`](requirements.txt) | Databricks Apps pip install |
-| [`tests/`](tests/) | pytest suite |
-| [`docs/`](docs/) | All documentation (see table above) |
+| [app/main.py](app/main.py) | Streamlit chat app (RAG + LLM + Sarvam multilingual) |
+| [app.yaml](app.yaml) | Databricks Apps entry point + env config |
+| [src/nyaya_dhwani/](src/nyaya_dhwani/) | Core package: retrieval, LLM client, Sarvam clients, triage | 
+| [notebooks/](notebooks/) | Data ingestion and FAISS index build |
+| [requirements.txt](requirements.txt) | App dependencies |
+| [tests/](tests/) | pytest suite |
+| [docs/](docs/) | Documentation |
+
+
 
 ## Testing
 
@@ -99,7 +113,7 @@ pytest tests/ -v
 | Component | Technology |
 |-----------|-----------|
 | LLM | Databricks GPT-5.4-mini (AI Gateway) |
-| Embeddings | `sentence-transformers/all-MiniLM-L6-v2` |
+| Embeddings | sentence-transformers/all-MiniLM-L6-v2 |
 | Vector search | FAISS (IndexFlatIP, cosine similarity) |
 | Translation | Sarvam Mayura |
 | Speech-to-text | Sarvam Saaras |
