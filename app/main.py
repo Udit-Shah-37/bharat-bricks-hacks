@@ -211,7 +211,6 @@ def build_reply_markdown(assistant_en: str, cites: str, lang: str) -> str:
     if lang == "en" or not sarvam_configured():
         return (
             f"{assistant_en}"
-            f"\n\n---\n*{DISCLAIMER_EN}*"
         )
 
     tgt = bcp47_target(lang)
@@ -221,7 +220,6 @@ def build_reply_markdown(assistant_en: str, cites: str, lang: str) -> str:
     lang_label = dict(SARVAM_LANGUAGES).get(lang, lang)
     return (
         f"**{lang_label}:**\n\n{body_translated}\n\n"
-        f"\n\n---\n*{disc_translated}*"
     )
 
 
@@ -692,9 +690,9 @@ def render_app() -> None:
         st.audio(st.session_state.latest_tts, format="audio/wav")
 
     st.markdown(
-        "<p class='subtle-note'>⚖️ This is informational guidance only - not a substitute for legal counsel. "
-        "Consult a qualified lawyer for your specific situation.<br>"
-        "Powered by Databricks (GPT-5.4-mini + Vector Search) and Sarvam AI "
+        "<p class='subtle-note'>This is informational guidance only - not a substitute for legal counsel. "
+        "Consult a qualified lawyer for your specific situation."
+        " Powered by Databricks and Sarvam AI "
         "(translation, speech-to-text, text-to-speech)</p>",
         unsafe_allow_html=True,
     )
