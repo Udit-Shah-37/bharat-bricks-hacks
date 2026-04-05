@@ -10,17 +10,17 @@ Not legal advice. General information only.
 
 ```mermaid
 flowchart LR
-  U[User (text or voice)] -->|Speech| STT[Sarvam Saaras STT]
-  U -->|Text| IN[User text]
+  U["User (text or voice)"] -->|Speech| STT["Sarvam Saaras STT"]
+  U -->|Text| IN["User text"]
   STT --> IN
-  IN --> T1[Sarvam Mayura translate to English]
-  T1 --> RET[FAISS semantic search]
-  RET --> CTX[Top-k legal chunks]
-  CTX --> LLM[Databricks GPT-5.4-mini]
-  LLM --> OUT[Answer with citations]
-  OUT --> T2[Sarvam Mayura translate back]
-  T2 --> UI[Streamlit UI + sources]
-  UI -->|Optional| TTS[Sarvam Bulbul TTS]
+  IN --> T1["Sarvam Mayura translate to English"]
+  T1 --> RET["FAISS semantic search"]
+  RET --> CTX["Top-k legal chunks"]
+  CTX --> LLM["Databricks GPT-5.4-mini"]
+  LLM --> OUT["Answer with citations"]
+  OUT --> T2["Sarvam Mayura translate back"]
+  T2 --> UI["Streamlit UI + sources"]
+  UI -->|Optional| TTS["Sarvam Bulbul TTS"]
 ```
 
 ## What it does
