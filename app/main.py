@@ -475,22 +475,19 @@ def _apply_styles() -> None:
 
 
 def _run_turn(*, text: str, audio_bytes: bytes | None) -> None:
-    lang = st.session_state.lang
-    tts_on = st.session_state.tts_on
-    history = st.session_state.history_pairs
-
-    user_show, q_en = resolve_user_message(text, audio_bytes, lang)
-    assistant_en, cites, domain_str, elapsed_ms = _triage_service.answer(q_en, history)
-    reply_md = build_reply_markdown(assistant_en, cites, lang)
+    user_show, reply_md, assistant_en, domain_str, elapsed_ms, q_en = _generate_reply(
+        text=text,
+        audio_bytes=audio_bytes,
+    )
 
     st.session_state.history_pairs.append([user_show, reply_md])
     st.session_state.messages.append({"role": "user", "content": user_show})
     st.session_state.messages.append({"role": "assistant", "content": reply_md})
-    st.session_state.latest_tts = maybe_tts_bytes(reply_md, lang, tts_on)
+    st.session_state.latest_tts = maybe_tts_bytes(reply_md, st.session_state.lang, st.session_state.tts_on)
 
     try:
         log_query(
-            user_lang=lang,
+            user_lang=st.session_state.lang,
             query_text=text or "(audio)",
             query_en=q_en,
             domain_detected=domain_str,
@@ -501,11 +498,21 @@ def _run_turn(*, text: str, audio_bytes: bytes | None) -> None:
         logger.debug("Query logging failed (non-fatal)", exc_info=True)
 
 
+def _generate_reply(*, text: str, audio_bytes: bytes | None) -> tuple[str, str, str, str, int, str]:
+    lang = st.session_state.lang
+    history = st.session_state.history_pairs
+
+    user_show, q_en = resolve_user_message(text, audio_bytes, lang)
+    assistant_en, cites, domain_str, elapsed_ms = _triage_service.answer(q_en, history)
+    reply_md = build_reply_markdown(assistant_en, cites, lang)
+    return (user_show, reply_md, assistant_en, domain_str, elapsed_ms, q_en)
+
+
 def render_app() -> None:
     st.set_page_config(
         page_title="Nyaya-Sahayak",
         page_icon="⚖️",
-        layout="wide",
+        layout="centered",
         initial_sidebar_state="expanded",
     )
     _apply_styles()
@@ -588,11 +595,46 @@ def render_app() -> None:
 
     user_text = st.chat_input("Ask your legal question in any supported language...")
     if user_text:
-        try:
-            _run_turn(text=user_text, audio_bytes=None)
-            st.rerun()
-        except Exception as exc:
-            st.error(f"Error: {exc}")
+        st.session_state.messages.append({"role": "user", "content": user_text})
+        with st.chat_message("user"):
+            st.markdown(user_text)
+
+        with st.chat_message("assistant"):
+            response_placeholder = st.empty()
+            with st.spinner("Preparing legal guidance..."):
+                try:
+                    user_show, reply_md, assistant_en, domain_str, elapsed_ms, q_en = _generate_reply(
+                        text=user_text,
+                        audio_bytes=None,
+                    )
+
+                    # Keep the displayed user bubble in sync with resolved text format.
+                    st.session_state.messages[-1]["content"] = user_show
+                    st.session_state.history_pairs.append([user_show, reply_md])
+                    st.session_state.messages.append({"role": "assistant", "content": reply_md})
+                    st.session_state.latest_tts = maybe_tts_bytes(
+                        reply_md,
+                        st.session_state.lang,
+                        st.session_state.tts_on,
+                    )
+
+                    try:
+                        log_query(
+                            user_lang=st.session_state.lang,
+                            query_text=user_text,
+                            query_en=q_en,
+                            domain_detected=domain_str,
+                            response_en=assistant_en,
+                            response_time_ms=elapsed_ms,
+                        )
+                    except Exception:
+                        logger.debug("Query logging failed (non-fatal)", exc_info=True)
+
+                    response_placeholder.markdown(reply_md)
+                except Exception as exc:
+                    err = f"**Error:** {exc}"
+                    st.session_state.messages.append({"role": "assistant", "content": err})
+                    response_placeholder.markdown(err)
 
     if st.session_state.latest_tts:
         st.audio(st.session_state.latest_tts, format="audio/wav")
