@@ -1,4 +1,4 @@
-"""Gradio entrypoint: RAG + Maverick + Sarvam (STT / Mayura / Bulbul). See docs/PLAN.md."""
+"""Streamlit entrypoint: chat-first multilingual legal assistant."""
 
 from __future__ import annotations
 
@@ -15,48 +15,19 @@ _SRC = _ROOT / "src"
 if _SRC.is_dir() and str(_SRC) not in sys.path:
     sys.path.insert(0, str(_SRC))
 
-import gradio as gr
-import numpy as np
 import pandas as pd
+import streamlit as st
 
-# ---------- Monkey-patch gradio_client bug (1.3.0 + Gradio 4.44.x) ----------
-# get_api_info() crashes on Chatbot schemas where additionalProperties is True
-# (a bool).  The internal recursive calls use the module-level name, so we must
-# replace the actual function objects in the module namespace.
-import gradio_client.utils as _gc_utils  # noqa: E402
-
-_orig_inner = _gc_utils._json_schema_to_python_type
-_orig_get_type = _gc_utils.get_type
-
-def _safe_inner(schema, defs=None):
-    if not isinstance(schema, dict):
-        return "Any"
-    return _orig_inner(schema, defs)
-
-def _safe_get_type(schema):
-    if not isinstance(schema, dict):
-        return "Any"
-    return _orig_get_type(schema)
-
-# Patch module-level names so internal recursive calls also go through guards.
-_gc_utils._json_schema_to_python_type = _safe_inner
-_gc_utils.get_type = _safe_get_type
-# ---------- End monkey-patch ------------------------------------------------
-
-from nyaya_dhwani.triage_engine import (
-    TRIAGE_SYSTEM_PROMPT,
-)
+from nyaya_dhwani.triage_engine import TRIAGE_SYSTEM_PROMPT
 from nyaya_dhwani.triage_service import TriageService
 from nyaya_dhwani.query_logger import log_query
 from nyaya_dhwani.sarvam_client import (
     is_configured as sarvam_configured,
-    numpy_audio_to_wav_bytes,
     speech_to_text_file,
     strip_markdown_for_tts,
     text_to_speech_wav_bytes,
     transcript_from_stt_response,
     translate_text,
-    wav_bytes_to_numpy_float32,
 )
 
 logger = logging.getLogger(__name__)
@@ -88,7 +59,7 @@ SARVAM_LANGUAGES: list[tuple[str, str]] = [
     ("as", "Assamese"),
 ]
 
-# UI ISO-ish code → BCP-47 for Mayura / STT hints (best-effort for ur/as)
+# UI ISO-ish code -> BCP-47 for Mayura / STT hints (best-effort for ur/as)
 UI_TO_BCP47: dict[str, str] = {
     "en": "en-IN",
     "hi": "hi-IN",
@@ -111,24 +82,16 @@ DISCLAIMER_EN = (
 
 SYSTEM_PROMPT = TRIAGE_SYSTEM_PROMPT
 
+_triage_service = TriageService(system_prompt=SYSTEM_PROMPT, top_k=12)
+_TRANSLATE_CHUNK_LIMIT = 500  # Sarvam Mayura works best with shorter text
+
 
 def bcp47_target(lang: str) -> str:
     return UI_TO_BCP47.get(lang, "en-IN")
 
 
-_triage_service = TriageService(system_prompt=SYSTEM_PROMPT, top_k=12)
-
-
-_TRANSLATE_CHUNK_LIMIT = 500  # Sarvam Mayura works best with shorter text
-
-
 def _chunked_translate(text: str, *, source: str, target: str) -> str:
-    """Translate long text by splitting into paragraph-sized chunks.
-
-    Sarvam Mayura can silently return the input unchanged for long text.
-    Splitting on paragraph boundaries keeps context while staying within limits.
-    """
-    # Split on double-newlines (paragraphs) or single newlines for lists
+    """Translate long text by splitting into paragraph-sized chunks."""
     paragraphs = text.split("\n")
     chunks: list[str] = []
     current = ""
@@ -149,8 +112,8 @@ def _chunked_translate(text: str, *, source: str, target: str) -> str:
         try:
             result = translate_text(chunk, source_language_code=source, target_language_code=target)
             translated_parts.append(result)
-        except Exception as e:
-            logger.warning("Mayura chunk translate failed, keeping original: %s", e)
+        except Exception as exc:
+            logger.warning("Mayura chunk translate failed, keeping original: %s", exc)
             translated_parts.append(chunk)
     return "\n".join(translated_parts)
 
@@ -164,64 +127,55 @@ def _maybe_translate(text: str, *, source: str, target: str) -> str:
         return _chunked_translate(text, source=source, target=target)
     try:
         return translate_text(text, source_language_code=source, target_language_code=target)
-    except Exception as e:
-        logger.warning("Mayura translate failed, using original: %s", e)
+    except Exception as exc:
+        logger.warning("Mayura translate failed, using original: %s", exc)
         return text
 
 
 def text_to_query_english(user_text: str, lang: str) -> str:
-    """Non-English typed input → English for embedding/RAG (Mayura)."""
+    """Non-English typed input -> English for embedding/RAG (Mayura)."""
     t = user_text.strip()
     if not t:
         return t
     if lang == "en":
         return t
     if not sarvam_configured():
-        logger.warning("SARVAM_API_KEY missing — using raw text for retrieval (degraded).")
+        logger.warning("SARVAM_API_KEY missing - using raw text for retrieval (degraded).")
         return t
     return _maybe_translate(t, source="auto", target="en-IN")
 
 
-def resolve_user_message(
-    text: str,
-    audio: tuple[int, np.ndarray] | None,
-    lang: str,
-) -> tuple[str, str]:
-    """Returns ``(user_bubble_text, query_english)``."""
+def resolve_user_message(text: str, audio_bytes: bytes | None, lang: str) -> tuple[str, str]:
+    """Returns (user_bubble_text, query_english)."""
     text = (text or "").strip()
-    logger.debug("resolve_user_message: text=%r, audio type=%s",
-                 text[:80] if text else "", type(audio).__name__)
 
-    # Prefer typed text over audio (Gradio retains stale audio recordings).
+    # Prefer typed text over audio so chat input always wins.
     if text:
         q_en = text_to_query_english(text, lang)
         return (text, q_en)
 
-    # Fall back to audio only when no text was typed.
-    if audio is not None:
-        sr, data = audio
-        if data is not None and len(np.asarray(data)) > 0:
-            if not sarvam_configured():
-                raise RuntimeError("Set SARVAM_API_KEY for voice input (Sarvam STT).")
-            wav = numpy_audio_to_wav_bytes(np.asarray(data), int(sr))
-            mode = os.environ.get("SARVAM_STT_MODE", "translate").strip()
-            lang_hint = bcp47_target(lang) if mode == "transcribe" else None
-            st = speech_to_text_file(
-                wav,
-                mode=mode,
-                language_code=lang_hint,
-            )
-            tr = transcript_from_stt_response(st)
-            if mode == "translate":
-                return (f"🎤 {tr}", tr.strip())
-            q_en = _maybe_translate(tr, source="auto", target="en-IN")
-            return (f"🎤 {tr}", q_en.strip())
+    if audio_bytes:
+        if not sarvam_configured():
+            raise RuntimeError("Set SARVAM_API_KEY for voice input (Sarvam STT).")
+        mode = os.environ.get("SARVAM_STT_MODE", "translate").strip()
+        lang_hint = bcp47_target(lang) if mode == "transcribe" else None
+        stt = speech_to_text_file(
+            audio_bytes,
+            filename="voice.wav",
+            mode=mode,
+            language_code=lang_hint,
+        )
+        tr = transcript_from_stt_response(stt)
+        if mode == "translate":
+            return (f"🎤 {tr}", tr.strip())
+        q_en = _maybe_translate(tr, source="auto", target="en-IN")
+        return (f"🎤 {tr}", q_en.strip())
 
-    raise ValueError("Type a question or record audio. If you just recorded, wait for the audio to finish processing then try again.")
+    raise ValueError("Type a question or record audio before sending.")
 
 
 def build_reply_markdown(assistant_en: str, cites: str, lang: str) -> str:
-    """Build response with both English and translated text side by side."""
+    """Build response with translated text first and English as reference."""
     sources_block = f"**References used**\n{cites}"
 
     if lang == "en" or not sarvam_configured():
@@ -234,7 +188,6 @@ def build_reply_markdown(assistant_en: str, cites: str, lang: str) -> str:
     body_translated = _maybe_translate(assistant_en, source="en-IN", target=tgt)
     disc_translated = _maybe_translate(DISCLAIMER_EN, source="en-IN", target=tgt)
 
-    # Side-by-side: translated language first (primary), English below for reference
     lang_label = dict(SARVAM_LANGUAGES).get(lang, lang)
     return (
         f"**{lang_label}:**\n\n{body_translated}\n\n"
@@ -244,451 +197,367 @@ def build_reply_markdown(assistant_en: str, cites: str, lang: str) -> str:
     )
 
 
-def maybe_tts(text_markdown: str, lang: str, enabled: bool) -> tuple[int, np.ndarray] | None:
+def maybe_tts_bytes(text_markdown: str, lang: str, enabled: bool) -> bytes | None:
     if not enabled or not sarvam_configured():
         return None
-    # Extract the translated-language block (first section before ---).
-    # For bilingual responses, this is "**Lang:**\n\n<translated text>".
     narrative = text_markdown.split("\n---\n", 1)[0]
-    # Remove the language label header (e.g. "**Kannada:**") for cleaner TTS.
+
     import re
+
     narrative = re.sub(r"^\*\*[^*]+:\*\*\s*", "", narrative.strip())
     plain = strip_markdown_for_tts(narrative)
     if not plain.strip():
         return None
     tgt = bcp47_target(lang)
     try:
-        wav = text_to_speech_wav_bytes(plain, target_language_code=tgt)
-        sr, arr = wav_bytes_to_numpy_float32(wav)
-        return (sr, arr)
-    except Exception as e:
-        logger.warning("TTS failed: %s", e)
+        return text_to_speech_wav_bytes(plain, target_language_code=tgt)
+    except Exception as exc:
+        logger.warning("TTS failed: %s", exc)
         return None
 
 
-def run_turn(
-    message: str,
-    audio: tuple[int, np.ndarray] | None,
-    history: list | None,
-    lang: str,
-    tts_on: bool,
-) -> tuple[str, list, tuple[int, np.ndarray] | None, None]:
-    # Tuple pairs [[user, assistant], ...] — default Chatbot format. Avoids
-    # `type="messages"` JSON schemas that break gradio_client api_info on Gradio 4.44.x.
-    # Returns (msg_text, history, tts_audio, audio_in_clear).
-    history = [list(pair) for pair in history] if history else []
+def _load_query_logs() -> pd.DataFrame:
+    """Load query logs from Delta or CSV fallback."""
     try:
-        user_show, q_en = resolve_user_message(message, audio, lang)
-        assistant_en, cites, domain_str, elapsed_ms = _triage_service.answer(q_en, history)
-        reply_md = build_reply_markdown(assistant_en, cites, lang)
-        history.append([user_show, reply_md])
-        audio_out = maybe_tts(reply_md, lang, tts_on)
+        from pyspark.sql import SparkSession
 
-        # Log query asynchronously (best-effort, non-blocking)
-        try:
-            log_query(
-                user_lang=lang,
-                query_text=message or "(audio)",
-                query_en=q_en,
-                domain_detected=domain_str,
-                response_en=assistant_en,
-                response_time_ms=elapsed_ms,
-            )
-        except Exception:
-            logger.debug("Query logging failed (non-fatal)", exc_info=True)
-
-        return "", history, audio_out, None
-    except Exception as e:
-        logger.exception("run_turn")
-        err = f"**Error:** {e}"
-        history.append([message or "🎤 (audio)", err])
-        return "", history, None, None
+        spark = SparkSession.builder.getOrCreate()
+        table = os.environ.get("NYAYA_LOG_TABLE", "workspace.default.query_logs")
+        return spark.table(table).toPandas()
+    except Exception:
+        pass
+    csv_path = os.environ.get("NYAYA_LOG_CSV", "/tmp/nyaya_query_logs.csv")
+    if os.path.exists(csv_path):
+        return pd.read_csv(csv_path)
+    return pd.DataFrame()
 
 
-def build_app() -> gr.Blocks:
-    # ---- Analytics helpers (3C) ----
-    def _load_query_logs() -> pd.DataFrame:
-        """Load query logs from Delta or CSV fallback."""
-        try:
-            from pyspark.sql import SparkSession
-            spark = SparkSession.builder.getOrCreate()
-            table = os.environ.get("NYAYA_LOG_TABLE", "workspace.default.query_logs")
-            return spark.table(table).toPandas()
-        except Exception:
-            pass
-        csv_path = os.environ.get("NYAYA_LOG_CSV", "/tmp/nyaya_query_logs.csv")
-        if os.path.exists(csv_path):
-            return pd.read_csv(csv_path)
-        return pd.DataFrame()
+def _refresh_analytics() -> tuple[str, pd.DataFrame | None]:
+    """Generate analytics summary markdown + dataframe preview."""
+    import json as _json
 
-    def _refresh_analytics():
-        """Generate analytics summary markdown + dataframe preview."""
-        import json as _json
-        df = _load_query_logs()
-        if df.empty:
-            return "**No queries logged yet.** Start chatting to see analytics here!", None
+    df = _load_query_logs()
+    if df.empty:
+        return "**No queries logged yet.** Start chatting to see analytics here!", None
 
-        total = len(df)
-        lines = [f"## Analytics Dashboard\n", f"**Total queries:** {total}\n"]
+    total = len(df)
+    lines = ["## Analytics Dashboard\n", f"**Total queries:** {total}\n"]
 
-        # Domain breakdown
-        if "domain_detected" in df.columns:
-            domain_counts = df["domain_detected"].value_counts()
-            lines.append("### Legal Domain Breakdown")
-            for domain, count in domain_counts.items():
-                pct = count / total * 100
-                bar = "█" * int(pct / 5) + "░" * (20 - int(pct / 5))
-                lines.append(f"- **{domain}**: {count} ({pct:.0f}%) `{bar}`")
+    if "domain_detected" in df.columns:
+        domain_counts = df["domain_detected"].value_counts()
+        lines.append("### Legal Domain Breakdown")
+        for domain, count in domain_counts.items():
+            pct = count / total * 100
+            bar = "█" * int(pct / 5) + "░" * (20 - int(pct / 5))
+            lines.append(f"- **{domain}**: {count} ({pct:.0f}%) `{bar}`")
+        lines.append("")
+
+    if "user_lang" in df.columns:
+        lang_counts = df["user_lang"].value_counts()
+        lang_names = dict(SARVAM_LANGUAGES)
+        lines.append("### Language Distribution")
+        for lang_code, count in lang_counts.items():
+            name = lang_names.get(lang_code, lang_code)
+            lines.append(f"- **{name}** ({lang_code}): {count}")
+        lines.append("")
+
+    if "response_time_ms" in df.columns:
+        avg_ms = df["response_time_ms"].mean()
+        lines.append(f"### Performance\n- **Avg response time:** {avg_ms:.0f}ms")
+        lines.append("")
+
+    if "sections_cited" in df.columns:
+        all_sections = []
+        for raw in df["sections_cited"].dropna():
+            try:
+                secs = _json.loads(raw) if isinstance(raw, str) else raw
+                if isinstance(secs, list):
+                    all_sections.extend(secs)
+            except Exception:
+                pass
+        if all_sections:
+            from collections import Counter
+
+            sec_counts = Counter(all_sections).most_common(10)
+            lines.append("### Most Cited Legal Provisions (Top 10)")
+            for sec, cnt in sec_counts:
+                lines.append(f"- **{sec}**: cited {cnt} time(s)")
             lines.append("")
 
-        # Language breakdown
-        if "user_lang" in df.columns:
-            lang_counts = df["user_lang"].value_counts()
-            lang_names = dict(SARVAM_LANGUAGES)
-            lines.append("### Language Distribution")
-            for lang_code, count in lang_counts.items():
-                name = lang_names.get(lang_code, lang_code)
-                lines.append(f"- **{name}** ({lang_code}): {count}")
-            lines.append("")
+    summary_md = "\n".join(lines)
+    display_cols = [
+        c
+        for c in ["timestamp", "user_lang", "domain_detected", "query_text", "response_time_ms"]
+        if c in df.columns
+    ]
+    recent = df[display_cols].tail(20).iloc[::-1] if display_cols else df.tail(20).iloc[::-1]
 
-        # Avg response time
-        if "response_time_ms" in df.columns:
-            avg_ms = df["response_time_ms"].mean()
-            lines.append(f"### Performance\n- **Avg response time:** {avg_ms:.0f}ms")
-            lines.append("")
+    return summary_md, recent
 
-        # Most cited sections
-        if "sections_cited" in df.columns:
-            all_sections = []
-            for raw in df["sections_cited"].dropna():
-                try:
-                    secs = _json.loads(raw) if isinstance(raw, str) else raw
-                    if isinstance(secs, list):
-                        all_sections.extend(secs)
-                except Exception:
-                    pass
-            if all_sections:
-                from collections import Counter
-                sec_counts = Counter(all_sections).most_common(10)
-                lines.append("### Most Cited Legal Provisions (Top 10)")
-                for sec, cnt in sec_counts:
-                    lines.append(f"- **{sec}**: cited {cnt} time(s)")
-                lines.append("")
 
-        summary_md = "\n".join(lines)
+def _init_session_state() -> None:
+    st.session_state.setdefault("lang", "en")
+    st.session_state.setdefault("tts_on", True)
+    st.session_state.setdefault("messages", [])
+    st.session_state.setdefault("history_pairs", [])
+    st.session_state.setdefault("latest_tts", None)
+    st.session_state.setdefault("analytics_summary", "")
+    st.session_state.setdefault("analytics_table", None)
 
-        # Recent queries table
-        display_cols = [c for c in ["timestamp", "user_lang", "domain_detected", "query_text", "response_time_ms"]
-                        if c in df.columns]
-        recent = df[display_cols].tail(20).iloc[::-1] if display_cols else df.tail(20).iloc[::-1]
 
-        return summary_md, recent
+def _apply_styles() -> None:
+    st.markdown(
+        """
+        <style>
+        @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&family=Playfair+Display:wght@700&display=swap');
 
-    custom_css = """
-    @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&family=Playfair+Display:wght@600;700&display=swap');
+        :root {
+            --bg: #f5efe6;
+            --paper: #fffaf3;
+            --ink: #1f2a37;
+            --muted: #5b6470;
+            --brand: #a24d12;
+            --brand-strong: #7c3608;
+            --border: #eadfce;
+            --chat-user: #fff6e8;
+        }
 
-    :root {
-        --bg: #f5efe6;
-        --paper: #fffaf3;
-        --ink: #1f2a37;
-        --muted: #5b6470;
-        --brand: #b45309;
-        --brand-strong: #92400e;
-        --border: #eadfce;
-        --chat-user: #fff6e8;
-        --chat-assistant: #ffffff;
-        --shadow: 0 8px 28px rgba(48, 37, 21, 0.08);
-    }
+        .stApp {
+            font-family: 'Manrope', 'Segoe UI', sans-serif;
+            color: var(--ink);
+            background:
+                radial-gradient(1000px 500px at 10% -10%, #f6d9b8 0%, transparent 45%),
+                radial-gradient(900px 450px at 100% 0%, #f0d8c2 0%, transparent 40%),
+                var(--bg);
+        }
 
-    .gradio-container {
-        font-family: 'Manrope', 'Segoe UI', sans-serif !important;
-        background:
-            radial-gradient(1000px 500px at 10% -10%, #f6d9b8 0%, transparent 45%),
-            radial-gradient(900px 450px at 100% 0%, #f0d8c2 0%, transparent 40%),
-            var(--bg) !important;
-        color: var(--ink);
-    }
+        h1, h2, h3 {
+            font-family: 'Playfair Display', Georgia, serif;
+            color: #2d1f10;
+        }
 
-    .hero-card,
-    .chat-pane,
-    .side-pane,
-    .analytics-card {
-        background: var(--paper);
-        border: 1px solid var(--border);
-        border-radius: 18px;
-        box-shadow: var(--shadow);
-        padding: 16px 18px;
-    }
+        [data-testid="stSidebar"] {
+            background: var(--paper);
+            border-left: 1px solid var(--border);
+        }
 
-    .app-shell {
-        gap: 14px;
-        align-items: stretch;
-    }
-
-    .chat-pane {
-        min-height: 74vh;
-    }
-
-    .side-pane {
-        min-height: 74vh;
-    }
-
-    .hero-card h1 {
-        margin: 0;
-        font-family: 'Playfair Display', Georgia, serif;
-        font-weight: 700;
-        letter-spacing: 0.2px;
-        color: #2d1f10;
-    }
-
-    .hero-card p {
-        margin: 8px 0 0;
-        color: var(--muted);
-        font-size: 0.98rem;
-    }
-
-    .section-title {
-        margin: 0 0 8px;
-        font-weight: 700;
-        color: #3b2b17;
-    }
-
-    .compact-hint {
-        color: var(--muted);
-        font-size: 0.92rem;
-        margin-top: 8px;
-    }
-
-    .gr-button-primary {
-        background: linear-gradient(135deg, var(--brand), var(--brand-strong)) !important;
-        border: none !important;
-        color: #fff !important;
-        box-shadow: 0 6px 18px rgba(146, 64, 14, 0.28);
-    }
-
-    .gr-button-secondary {
-        border-color: var(--border) !important;
-    }
-
-    .gr-chatbot {
-        border: 1px solid var(--border) !important;
-        border-radius: 14px !important;
-        background: #fffcf8 !important;
-        min-height: 58vh;
-    }
-
-    .composer-row {
-        margin-top: 10px;
-        gap: 10px;
-        align-items: center;
-    }
-
-    .composer-row .gr-textbox {
-        margin-bottom: 0 !important;
-    }
-
-    .message.user {
-        background: var(--chat-user) !important;
-        border: 1px solid #f4dec0 !important;
-    }
-
-    .message.bot {
-        background: var(--chat-assistant) !important;
-        border: 1px solid #efe2d3 !important;
-    }
-
-    footer {
-        color: #6c7380;
-        font-size: 0.86rem;
-    }
-
-    @media (max-width: 900px) {
-        .hero-card,
-        .chat-pane,
-        .side-pane,
-        .analytics-card {
-            padding: 14px;
+        [data-testid="stChatMessage"] {
+            border: 1px solid var(--border);
             border-radius: 14px;
+            background: #fffcf8;
+            padding: 0.3rem 0.7rem;
         }
-        .hero-card h1 {
-            font-size: 1.55rem;
+
+        [data-testid="stChatMessage"]:has([data-testid="chatAvatarIcon-user"]) {
+            background: var(--chat-user);
         }
-        .chat-pane,
-        .side-pane {
-            min-height: auto;
+
+        .stButton > button, .stDownloadButton > button {
+            border: none;
+            color: white;
+            background: linear-gradient(135deg, var(--brand), var(--brand-strong));
+            box-shadow: 0 6px 18px rgba(124, 54, 8, 0.22);
         }
-        .gr-chatbot {
-            min-height: 48vh;
+
+        .subtle-note {
+            color: var(--muted);
+            font-size: 0.9rem;
         }
-    }
-    """
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
 
-    with gr.Blocks(
-        theme=gr.themes.Soft(primary_hue="slate", secondary_hue="orange"),
-        css=custom_css,
-        title="Nyaya-Sahayak",
-    ) as demo:
-        gr.Markdown(
-            """
-            <div class='hero-card'>
-              <h1>Nyaya-Sahayak · न्याय सहायक</h1>
-              <p>Your legal first-response assistant powered by Databricks and Sarvam AI.</p>
-            </div>
-            """
+
+def _run_turn(*, text: str, audio_bytes: bytes | None) -> None:
+    lang = st.session_state.lang
+    tts_on = st.session_state.tts_on
+    history = st.session_state.history_pairs
+
+    user_show, q_en = resolve_user_message(text, audio_bytes, lang)
+    assistant_en, cites, domain_str, elapsed_ms = _triage_service.answer(q_en, history)
+    reply_md = build_reply_markdown(assistant_en, cites, lang)
+
+    st.session_state.history_pairs.append([user_show, reply_md])
+    st.session_state.messages.append({"role": "user", "content": user_show})
+    st.session_state.messages.append({"role": "assistant", "content": reply_md})
+    st.session_state.latest_tts = maybe_tts_bytes(reply_md, lang, tts_on)
+
+    try:
+        log_query(
+            user_lang=lang,
+            query_text=text or "(audio)",
+            query_en=q_en,
+            domain_detected=domain_str,
+            response_en=assistant_en,
+            response_time_ms=elapsed_ms,
+        )
+    except Exception:
+        logger.debug("Query logging failed (non-fatal)", exc_info=True)
+
+
+def render_app() -> None:
+    st.set_page_config(
+        page_title="Nyaya-Sahayak",
+        page_icon="⚖️",
+        layout="wide",
+        initial_sidebar_state="expanded",
+    )
+    _apply_styles()
+    _init_session_state()
+
+    st.title("Nyaya-Sahayak · न्याय सहायक")
+    st.caption("Your legal first-response assistant powered by Databricks and Sarvam AI.")
+
+    with st.sidebar:
+        st.subheader("Session")
+        lang_map = {label: code for code, label in SARVAM_LANGUAGES}
+        lang_codes = list(lang_map.values())
+        lang_index = lang_codes.index(st.session_state.lang) if st.session_state.lang in lang_codes else 0
+        selected_label = st.selectbox(
+            "Language",
+            options=list(lang_map.keys()),
+            index=lang_index,
+            help="Questions are retrieved in English and answers are returned in your selected language.",
+        )
+        st.session_state.lang = lang_map[selected_label]
+
+        st.session_state.tts_on = st.toggle("Read answer aloud", value=st.session_state.tts_on)
+
+        topic = st.selectbox("Quick start prompt", options=["Choose a topic..."] + list(TOPIC_SEEDS.keys()))
+        if st.button("Ask quick prompt", use_container_width=True) and topic in TOPIC_SEEDS:
+            try:
+                _run_turn(text=TOPIC_SEEDS[topic], audio_bytes=None)
+                st.rerun()
+            except Exception as exc:
+                st.error(f"Error: {exc}")
+
+        st.markdown("---")
+        st.subheader("Voice")
+        audio_file = None
+        if hasattr(st, "audio_input"):
+            audio_file = st.audio_input("Record your question")
+        else:
+            st.info("Audio recording is not available in this Streamlit version. Upload a WAV file instead.")
+            audio_file = st.file_uploader("Upload WAV", type=["wav"])
+        if st.button("Send voice", use_container_width=True):
+            if audio_file is None:
+                st.warning("Record audio first.")
+            else:
+                try:
+                    _run_turn(text="", audio_bytes=audio_file.getvalue())
+                    st.rerun()
+                except Exception as exc:
+                    st.error(f"Error: {exc}")
+
+        if st.button("Clear chat", use_container_width=True):
+            st.session_state.messages = []
+            st.session_state.history_pairs = []
+            st.session_state.latest_tts = None
+            st.rerun()
+
+        with st.expander("Usage analytics", expanded=False):
+            if st.button("Refresh analytics", use_container_width=True):
+                summary, table = _refresh_analytics()
+                st.session_state.analytics_summary = summary
+                st.session_state.analytics_table = table
+
+            if st.session_state.analytics_summary:
+                st.markdown(st.session_state.analytics_summary)
+            else:
+                st.markdown("**Click 'Refresh analytics' to load usage data.**")
+
+            if st.session_state.analytics_table is not None:
+                st.dataframe(st.session_state.analytics_table, use_container_width=True, hide_index=True)
+
+        st.markdown(
+            "<p class='subtle-note'>General legal information only. For your specific situation, consult a qualified lawyer.</p>",
+            unsafe_allow_html=True,
         )
 
-        lang_state = gr.State("en")
+    st.markdown(f"**Session language:** {selected_label}")
 
-        with gr.Row(elem_classes=["app-shell"]):
-            with gr.Column(scale=8, elem_classes=["chat-pane"]):
-                gr.Markdown("<h3 class='section-title'>Legal Chat</h3>")
-                current_lang = gr.Markdown("*Session language: English*")
-                chatbot = gr.Chatbot(
-                    label="Nyaya-Sahayak",
-                    bubble_full_width=False,
-                )
-                with gr.Row(elem_classes=["composer-row"]):
-                    msg = gr.Textbox(
-                        placeholder="Ask your legal question in any supported language...",
-                        show_label=False,
-                        lines=2,
-                        container=False,
-                        scale=8,
-                    )
-                    submit = gr.Button("Send", variant="primary", scale=1, min_width=110)
-                    clear_chat = gr.Button("Clear", variant="secondary", scale=1, min_width=96)
+    for msg in st.session_state.messages:
+        with st.chat_message(msg["role"]):
+            st.markdown(msg["content"])
 
-            with gr.Column(scale=4, min_width=300, elem_classes=["side-pane"]):
-                gr.Markdown("<h3 class='section-title'>Controls</h3>")
-                lang_radio = gr.Radio(
-                    choices=[(c[1], c[0]) for c in SARVAM_LANGUAGES],  # (label, value)
-                    value="en",
-                    label="Language",
-                    info="Questions are retrieved in English and answers are returned in your selected language.",
-                )
-                topic = gr.Dropdown(
-                    choices=list(TOPIC_SEEDS.keys()),
-                    label="Quick start prompt",
-                    value=None,
-                    interactive=True,
-                )
-                audio_in = gr.Audio(
-                    sources=["microphone"],
-                    type="numpy",
-                    label="Speak your question",
-                )
-                tts_cb = gr.Checkbox(
-                    label="Read answer aloud",
-                    value=True,
-                )
-                tts_out = gr.Audio(
-                    label="Listen to answer",
-                    type="numpy",
-                    interactive=False,
-                )
-                gr.Markdown(
-                    "<p class='compact-hint'>General legal information only. For your specific situation, consult a qualified lawyer.</p>"
-                )
+    user_text = st.chat_input("Ask your legal question in any supported language...")
+    if user_text:
+        try:
+            _run_turn(text=user_text, audio_bytes=None)
+            st.rerun()
+        except Exception as exc:
+            st.error(f"Error: {exc}")
 
-                with gr.Accordion("Usage analytics", open=False, elem_classes=["analytics-card"]):
-                    refresh_btn = gr.Button("Refresh analytics", variant="secondary")
-                    analytics_md = gr.Markdown("**Click 'Refresh analytics' to load usage data.**")
-                    analytics_table = gr.Dataframe(
-                        label="Recent queries",
-                        interactive=False,
-                        wrap=True,
-                    )
-                refresh_btn.click(
-                    _refresh_analytics,
-                    inputs=[],
-                    outputs=[analytics_md, analytics_table],
-                )
+    if st.session_state.latest_tts:
+        st.audio(st.session_state.latest_tts, format="audio/wav")
 
-        def on_lang_change(lang_code: str):
-            labels = dict(SARVAM_LANGUAGES)
-            label = labels.get(lang_code, lang_code)
-            return (
-                lang_code,
-                f"*Session language: {label}*",
-            )
-
-        lang_radio.change(
-            on_lang_change,
-            inputs=[lang_radio],
-            outputs=[lang_state, current_lang],
-        )
-
-        def fill_topic(choice: str | None):
-            if not choice:
-                return gr.update()
-            seed = TOPIC_SEEDS.get(choice, "")
-            return gr.update(value=seed)
-
-        topic.change(fill_topic, inputs=[topic], outputs=[msg])
-
-        _run_turn_io = dict(
-            fn=run_turn,
-            inputs=[msg, audio_in, chatbot, lang_state, tts_cb],
-            outputs=[msg, chatbot, tts_out, audio_in],
-        )
-        submit.click(**_run_turn_io)
-        msg.submit(**_run_turn_io)
-        clear_chat.click(
-            lambda: ([], None),
-            inputs=[],
-            outputs=[chatbot, tts_out],
-        )
-        # Auto-submit when the user stops recording (so they don't need to click Send).
-        audio_in.stop_recording(**_run_turn_io)
-
-        gr.Markdown(
-            "<small>⚖️ This is informational guidance only — not a substitute for legal counsel. "
-            "Consult a qualified lawyer for your specific situation.</small>\n\n"
-            "<small>Powered by Databricks (Llama Maverick + Vector Search) · "
-            "Sarvam AI (translation, speech-to-text, text-to-speech)</small>"
-        )
-
-    return demo
+    st.markdown(
+        "<p class='subtle-note'>⚖️ This is informational guidance only - not a substitute for legal counsel. "
+        "Consult a qualified lawyer for your specific situation.<br>"
+        "Powered by Databricks (Llama Maverick + Vector Search) and Sarvam AI "
+        "(translation, speech-to-text, text-to-speech)</p>",
+        unsafe_allow_html=True,
+    )
 
 
 def _load_secrets_from_scope() -> None:
-    """Load secrets from Databricks secret scope into env vars (for Databricks Apps).
-
-    The Apps UI secret resources don't always wire through reliably.
-    Fall back to reading from the workspace secret scope via the SDK,
-    the same way notebooks do with dbutils.secrets.get().
-    """
+    """Load secrets from Databricks secret scope into env vars (for Databricks Apps)."""
     mapping = {
         "SARVAM_API_KEY": ("nyaya-dhwani", "sarvam_api_key"),
     }
     for env_var, (scope, key) in mapping.items():
         if os.environ.get(env_var, "").strip():
-            continue  # already set (e.g. locally or via Apps resource)
+            continue
         try:
             from databricks.sdk import WorkspaceClient
+
             w = WorkspaceClient()
             val = w.secrets.get_secret(scope=scope, key=key)
             if val and val.value:
                 import base64
-                # SDK get_secret returns base64-encoded value
+
                 try:
                     decoded = base64.b64decode(val.value).decode("utf-8")
                 except Exception:
-                    decoded = val.value  # fallback: maybe it's already plain text
+                    decoded = val.value
                 os.environ[env_var] = decoded
                 logger.info("Loaded %s from secret scope %s/%s", env_var, scope, key)
         except Exception as exc:
             logger.warning("Could not load %s from secret scope: %s", env_var, exc)
 
 
+def _is_streamlit_runtime() -> bool:
+    try:
+        from streamlit.runtime.scriptrunner import get_script_run_ctx
+
+        return get_script_run_ctx() is not None
+    except Exception:
+        return False
+
+
+def _bootstrap_streamlit() -> None:
+    from streamlit.web import bootstrap
+
+    script_path = str(Path(__file__).resolve())
+    port = os.environ.get("DATABRICKS_APP_PORT") or os.environ.get("PORT") or "8000"
+    flag_options = {
+        "server.port": int(port),
+        "server.address": "0.0.0.0",
+        "browser.gatherUsageStats": False,
+    }
+    bootstrap.run(script_path, False, [], flag_options)
+
+
 def main() -> None:
     logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO"))
     _load_secrets_from_scope()
-    demo = build_app()
-    demo.queue()
-    # Match Databricks app-templates: bare launch() lets the platform
-    # inject GRADIO_SERVER_NAME, GRADIO_SERVER_PORT, GRADIO_ROOT_PATH etc.
-    demo.launch()
+
+    if _is_streamlit_runtime():
+        render_app()
+        return
+
+    _bootstrap_streamlit()
 
 
 if __name__ == "__main__":
